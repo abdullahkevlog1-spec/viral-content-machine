@@ -2,10 +2,10 @@
 #  engine.py — Viral Content Generation Engine
 #  NEW FILE — handles all AI logic, hooks, niche profiles, anti-generic filter
 # ═══════════════════════════════════════════════════════════════════════════
- 
+
 import requests
 import random
- 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  HOOK STYLES LIBRARY  (12 psychology-backed hooks)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ HOOK_STYLES = [
         "psychology": "Before/after contrast activates aspiration, hope, and belief in change"
     },
 ]
- 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  NICHE PROFILES — tone, audience, CTA library per niche
 # ─────────────────────────────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ NICHE_PROFILES = {
         ]
     }
 }
- 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  ANTI-GENERIC FILTER — rejects clichéd, low-engagement output
 # ─────────────────────────────────────────────────────────────────────────────
@@ -253,13 +253,13 @@ GENERIC_PHRASES = [
     "most people don't realize", "what nobody tells you",
     "secret that nobody", "hack your way", "10x your",
 ]
- 
+
 WEAK_OPENERS = [
     "in today", "the truth", "it's no", "as we", "we live",
     "most people", "let me tell", "here's the thing",
     "i want to", "i am going to", "this post is about",
 ]
- 
+
 def is_generic(text: str) -> bool:
     """Returns True if text contains ANY generic phrase — strict mode."""
     text_lower = text.lower()
@@ -273,7 +273,7 @@ def is_generic(text: str) -> bool:
         if first_line.startswith(opener):
             return True
     return False
- 
+
 def is_too_short(text: str) -> bool:
     """Reject posts under 150 characters or fewer than 3 paragraphs."""
     if len(text.strip()) < 150:
@@ -282,7 +282,7 @@ def is_too_short(text: str) -> bool:
     if len(paragraphs) < 2:
         return True
     return False
- 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  TONE LEVEL DESCRIPTIONS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -293,7 +293,7 @@ def tone_descriptor(level: int) -> str:
         return "balanced and direct — engaging, slightly bold, confident voice"
     else:
         return "aggressive and provocative — bold claims, challenge common beliefs, create debate. Be fearless."
- 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  PROMPT BUILDER — constructs engineered prompt per variation
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,18 +312,45 @@ VARIATION_INSTRUCTIONS = {
         "Be bold, provocative, and confident. Not offensive — but definitely uncomfortable for some."
     )
 }
- 
-def build_prompt(niche: str, hook_style: dict, variation: str, tone_level: int) -> str:
+
+LANGUAGE_INSTRUCTIONS = {
+    "English": {
+        "instruction": "Write the ENTIRE post in clear, punchy English.",
+        "cta_note": "CTA in English.",
+        "hashtag_note": "Use English hashtags.",
+    },
+    "Roman Urdu": {
+        "instruction": """Write the ENTIRE post in Roman Urdu (Urdu words written in English letters).
+Example style: "Yaar, kya tumne kabhi socha hai ke AI tera kaam chheen sakti hai? Nahi? To sun..."
+Every word must be Roman Urdu. Do NOT mix in English sentences. Only Roman Urdu throughout.""",
+        "cta_note": "CTA bhi Roman Urdu mein likho. Jaise: 'Neeche comment karo agar tum bhi yahi sochte ho!'",
+        "hashtag_note": "Use Urdu/Pakistan-relevant hashtags like #Pakistan #Urdu #PakistaniYouth",
+    },
+    "Hinglish": {
+        "instruction": """Write the ENTIRE post in Hinglish (natural mix of Hindi/Urdu words and English).
+Example style: "Bhai, AI ne seriously sab kuch change kar diya hai. Abhi tak jo log soch rahe the..."
+Mix naturally — don't force either language. Sound like a smart Pakistani/Indian friend texting.""",
+        "cta_note": "CTA Hinglish mein. Jaise: 'Comment mein batao tum kya sochte ho!'",
+        "hashtag_note": "Mix English and Urdu hashtags.",
+    },
+}
+
+def build_prompt(niche: str, hook_style: dict, variation: str, tone_level: int, language: str = "English") -> str:
     profile = NICHE_PROFILES[niche]
     hook_examples = "\n".join([f'  • "{ex}"' for ex in hook_style["examples"]])
     hashtags_sample = " ".join(random.sample(profile["hashtag_pool"], min(5, len(profile["hashtag_pool"]))))
- 
+    lang = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["English"])
+
     prompt = f"""You are an elite viral Facebook content strategist with 10 years of growth experience.
 Your posts consistently get 10x more engagement than average.
- 
+
 ═══ MISSION ═══
 Write a Facebook post that stops the scroll, triggers emotion, and drives comments/shares.
- 
+
+═══ LANGUAGE — CRITICAL ═══
+{lang['instruction']}
+This is non-negotiable. Wrong language = failed output.
+
 ═══ PARAMETERS ═══
 NICHE: {niche}
 TARGET AUDIENCE: {profile['audience']}
@@ -335,27 +362,29 @@ HOOK STYLE: {hook_style['name']}
 {hook_examples}
 VARIATION TYPE: {variation}
   Instruction: {VARIATION_INSTRUCTIONS[variation]}
- 
+
 ═══ MANDATORY POST STRUCTURE ═══
 Write the post in this EXACT 4-part format, each section separated by a blank line:
- 
+
 [PART 1 — HOOK]
 One single, powerful scroll-stopping line. Use the {hook_style['id']} hook style.
 Short. Punchy. Makes the reader NEED to keep reading.
- 
+
 [PART 2 — VALUE]
 2-3 short lines delivering the core insight or benefit.
 One idea per line. Mobile-friendly. No waffle.
- 
+
 [PART 3 — SECOND PUNCH]
 1-2 lines that land a fresh angle or reinforce the message with new energy.
 Hit them again from a different direction.
- 
+
 [PART 4 — CTA]
 One dynamic call to action. Make it feel natural, not salesy.
+{lang['cta_note']}
 Drive comments, follows, or saves. Relevant to {niche}.
 Suggested hashtags to end with: {hashtags_sample}
- 
+{lang['hashtag_note']}
+
 ═══ HARD RULES ═══
 1. Return ONLY the post text. Zero labels. Zero "Here is your post:" preamble.
 2. Max 12 words per line. Short = readable on mobile.
@@ -369,19 +398,78 @@ Suggested hashtags to end with: {hashtags_sample}
 7. Be SPECIFIC. Give REAL insight. If someone can nod and move on — rewrite it.
 8. Make someone feel: "I've never heard it put exactly that way."
 9. Every line must earn its place. No filler. No waffle. No vague statements.
- 
+
 Write the post now. Start directly with the hook:"""
- 
+
     return prompt
- 
+    profile = NICHE_PROFILES[niche]
+    hook_examples = "\n".join([f'  • "{ex}"' for ex in hook_style["examples"]])
+    hashtags_sample = " ".join(random.sample(profile["hashtag_pool"], min(5, len(profile["hashtag_pool"]))))
+
+    prompt = f"""You are an elite viral Facebook content strategist with 10 years of growth experience.
+Your posts consistently get 10x more engagement than average.
+
+═══ MISSION ═══
+Write a Facebook post that stops the scroll, triggers emotion, and drives comments/shares.
+
+═══ PARAMETERS ═══
+NICHE: {niche}
+TARGET AUDIENCE: {profile['audience']}
+CONTENT TONE STYLE: {profile['tone_descriptor']}
+AGGRESSION LEVEL: {tone_descriptor(tone_level)} (level {tone_level}/10)
+HOOK STYLE: {hook_style['name']}
+  Psychology: {hook_style['psychology']}
+  Example hooks (inspire, do NOT copy exactly):
+{hook_examples}
+VARIATION TYPE: {variation}
+  Instruction: {VARIATION_INSTRUCTIONS[variation]}
+
+═══ MANDATORY POST STRUCTURE ═══
+Write the post in this EXACT 4-part format, each section separated by a blank line:
+
+[PART 1 — HOOK]
+One single, powerful scroll-stopping line. Use the {hook_style['id']} hook style.
+Short. Punchy. Makes the reader NEED to keep reading.
+
+[PART 2 — VALUE]
+2-3 short lines delivering the core insight or benefit.
+One idea per line. Mobile-friendly. No waffle.
+
+[PART 3 — SECOND PUNCH]
+1-2 lines that land a fresh angle or reinforce the message with new energy.
+Hit them again from a different direction.
+
+[PART 4 — CTA]
+One dynamic call to action. Make it feel natural, not salesy.
+Drive comments, follows, or saves. Relevant to {niche}.
+Suggested hashtags to end with: {hashtags_sample}
+
+═══ HARD RULES ═══
+1. Return ONLY the post text. Zero labels. Zero "Here is your post:" preamble.
+2. Max 12 words per line. Short = readable on mobile.
+3. Use {profile['emojis']} emojis naturally — 2 to 5 total.
+4. End with 4-6 relevant hashtags on the final line only.
+5. BANNED PHRASES (instant reject): "stay motivated", "work hard", "believe in yourself",
+   "never give up", "you can do it", "success is a journey", "dream big", "be positive",
+   "in today's world", "game changer", "think outside the box", "the future is bright",
+   "most people don't realize", "it's no secret", "at the end of the day".
+6. Do NOT start with "In today's", "The truth is", "As we all know", "Most people".
+7. Be SPECIFIC. Give REAL insight. If someone can nod and move on — rewrite it.
+8. Make someone feel: "I've never heard it put exactly that way."
+9. Every line must earn its place. No filler. No waffle. No vague statements.
+
+Write the post now. Start directly with the hook:"""
+
+    return prompt
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  SINGLE POST GENERATOR (with anti-generic retry loop)
 # ─────────────────────────────────────────────────────────────────────────────
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
- 
+
 def generate_single(niche: str, hook_style: dict, variation: str, tone_level: int,
-                    api_key: str, max_retries: int = 3) -> dict:
+                    api_key: str, max_retries: int = 3, language: str = "English") -> dict:
     """
     Generate one post using Groq API (free, fast).
     Retries up to max_retries times if output is generic or too short.
@@ -389,12 +477,12 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
     """
     if not api_key or not api_key.strip():
         return {"text": "", "error": "NO_API_KEY", "retries": 0, "flagged_generic": False}
- 
+
     last_text = ""
     flagged = False
- 
+
     for attempt in range(max_retries):
-        prompt = build_prompt(niche, hook_style, variation, tone_level)
+        prompt = build_prompt(niche, hook_style, variation, tone_level, language)
         temperature = round(0.82 + (attempt * 0.06), 2)
         try:
             response = requests.post(
@@ -412,49 +500,49 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
                 },
                 timeout=30
             )
- 
+
             if response.status_code == 401:
                 return {"text": "", "error": "GROQ_INVALID_KEY", "retries": attempt, "flagged_generic": False}
             if response.status_code == 429:
                 return {"text": "", "error": "GROQ_RATE_LIMIT", "retries": attempt, "flagged_generic": False}
             if response.status_code != 200:
                 return {"text": "", "error": f"GROQ_HTTP_{response.status_code}", "retries": attempt, "flagged_generic": False}
- 
+
             data = response.json()
             text = data["choices"][0]["message"]["content"].strip()
             last_text = text
- 
+
             # Quality gates
             if is_too_short(text):
                 continue
             if is_generic(text):
                 flagged = True
                 continue
- 
+
             return {"text": text, "error": None, "retries": attempt, "flagged_generic": False}
- 
+
         except requests.exceptions.ConnectionError:
             return {"text": "", "error": "NETWORK_ERROR", "retries": attempt, "flagged_generic": False}
         except Exception as e:
             return {"text": "", "error": str(e), "retries": attempt, "flagged_generic": False}
- 
+
     return {"text": last_text, "error": None, "retries": max_retries, "flagged_generic": flagged}
- 
- 
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  THREE VARIATIONS GENERATOR
 # ─────────────────────────────────────────────────────────────────────────────
-def generate_three_variations(niche: str, hook_style: dict, tone_level: int, api_key: str) -> dict:
+def generate_three_variations(niche: str, hook_style: dict, tone_level: int, api_key: str, language: str = "English") -> dict:
     """
     Generates Emotional, Educational, and Bold/Controversial versions of a post.
     Returns dict keyed by variation name.
     """
     results = {}
     for variation in ["Emotional", "Educational", "Bold/Controversial"]:
-        results[variation] = generate_single(niche, hook_style, variation, tone_level, api_key)
+        results[variation] = generate_single(niche, hook_style, variation, tone_level, api_key, language=language)
     return results
- 
- 
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  POST STRUCTURE PARSER — extracts hook & CTA paragraphs for highlighted preview
 # ─────────────────────────────────────────────────────────────────────────────
@@ -477,8 +565,8 @@ def parse_post_sections(text: str) -> dict:
     else:
         lines = text.strip().split("\n")
         return {"hook": lines[0] if lines else text, "body": "\n".join(lines[1:-1]), "cta": lines[-1] if len(lines) > 1 else ""}
- 
- 
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  HOOK STYLE LOOKUP
 # ─────────────────────────────────────────────────────────────────────────────
@@ -487,12 +575,64 @@ def get_hook_by_id(hook_id: str) -> dict:
         if h["id"] == hook_id:
             return h
     return HOOK_STYLES[0]
- 
+
 def get_hook_names() -> list:
     return [h["name"] for h in HOOK_STYLES]
- 
+
 def get_hook_by_name(name: str) -> dict:
     for h in HOOK_STYLES:
         if h["name"] == name:
             return h
     return HOOK_STYLES[0]
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  IMAGE GENERATION — Pollinations.ai (free, no API key needed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+NICHE_IMAGE_STYLES = {
+    "AI & Tech":          "futuristic digital neural network glowing blue circuit holographic interface, dark background, 4k",
+    "Motivation":         "cinematic golden sunrise mountain peak silhouette person standing victory, dramatic lighting, inspirational",
+    "Business & Finance": "modern minimalist corporate glass skyscraper city money abstract, professional dark navy gold",
+    "ASMR / Satisfying":  "ultra satisfying colorful slime pastel soap bubbles macro close-up, dreamy soft aesthetic",
+    "Health & Wellness":  "serene nature green forest yoga meditation peaceful morning light",
+    "Relationships":      "warm cozy coffee shop couple conversation bokeh soft lighting, cinematic",
+    "Comedy & Memes":     "colorful pop art bold comic style funny expressive cartoon character",
+    "News & Trends":      "breaking news bold red black dramatic modern editorial design",
+}
+
+def build_image_prompt(niche: str, post_text: str) -> str:
+    """Build a visual prompt from niche + first line of post."""
+    style = NICHE_IMAGE_STYLES.get(niche, "professional social media graphic vibrant modern design")
+    # Take first line of post as context (skip emojis/hashtags)
+    first_line = post_text.strip().split("\n")[0][:80] if post_text else ""
+    # Remove hashtags and emojis for cleaner prompt
+    import re
+    first_line = re.sub(r"#\w+", "", first_line).strip()
+    return f"{first_line}, {style}, no text, no words, Facebook post image 1200x630"
+
+def generate_image_url(niche: str, post_text: str) -> str:
+    """
+    Returns a Pollinations.ai image URL — free, no API key, no rate limit.
+    Image is generated on-the-fly when URL is loaded.
+    """
+    import urllib.parse
+    prompt = build_image_prompt(niche, post_text)
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&enhance=true&seed={random.randint(1,99999)}"
+    return url
+
+def post_image_to_facebook(page_id: str, page_token: str, image_url: str, caption: str) -> dict:
+    """Post image + caption to Facebook page using photo endpoint."""
+    url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
+    try:
+        r = requests.post(url, data={
+            "url": image_url,
+            "caption": caption,
+            "access_token": page_token,
+        }, timeout=30)
+        data = r.json()
+        if "id" in data or "post_id" in data:
+            return {"success": True, "id": data.get("post_id", data.get("id"))}
+        return {"success": False, "error": data.get("error", {}).get("message", "Unknown error")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
