@@ -17,7 +17,8 @@ from engine import (
     HOOK_STYLES, NICHE_PROFILES,
     get_hook_names, get_hook_by_name,
     generate_three_variations, generate_single,
-    parse_post_sections, get_hook_by_id
+    parse_post_sections, get_hook_by_id,
+    generate_image_url, post_image_to_facebook,
 )
 import analytics
 
@@ -34,6 +35,7 @@ SCHEDULE_SLOTS = [
         "hook_id": "curiosity",
         "tone": 7,
         "variation": "Bold/Controversial",
+        "language": "English",
     },
     {
         "label": "☀️ Dopahar 2:00 PM",
@@ -42,6 +44,7 @@ SCHEDULE_SLOTS = [
         "hook_id": "bold_claim",
         "tone": 8,
         "variation": "Bold/Controversial",
+        "language": "Roman Urdu",
     },
     {
         "label": "🌙 Raat 9:00 PM",
@@ -50,6 +53,7 @@ SCHEDULE_SLOTS = [
         "hook_id": "relatable_pain",
         "tone": 5,
         "variation": "Emotional",
+        "language": "Hinglish",
     },
 ]
 
@@ -72,13 +76,20 @@ def scheduled_post_job(slot: dict):
         tone_level=slot["tone"],
         api_key=api_key,
         max_retries=4,
+        language=slot.get("language", "English"),
     )
 
     if result.get("error") or not result.get("text"):
         _log_schedule(slot["label"], f"FAILED — {result.get('error')}")
         return
 
-    post_result = post_to_facebook(page_id, page_token, result["text"])
+    # Post with image
+    img_url = generate_image_url(slot["niche"], result["text"])
+    post_result = post_image_to_facebook(page_id, page_token, img_url, result["text"])
+
+    # Fallback to text-only if image post fails
+    if not post_result.get("success"):
+        post_result = post_to_facebook(page_id, page_token, result["text"])
     status = "POSTED ✅" if post_result.get("success") else f"FB ERROR — {post_result.get('error')}"
     _log_schedule(slot["label"], status, result["text"])
 
@@ -475,6 +486,30 @@ with st.sidebar:
         tone_label = '<span class="tone-aggro">🔴 Aggressive — bold, provocative</span>'
     st.markdown(tone_label, unsafe_allow_html=True)
 
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # [NEW] Language selector
+    st.markdown("**🌐 Language**")
+    language = st.selectbox(
+        "language",
+        ["English", "Roman Urdu", "Hinglish"],
+        label_visibility="collapsed",
+        help="Roman Urdu = Urdu in English letters | Hinglish = mixed English+Urdu"
+    )
+    lang_note = {
+        "English": "🇬🇧 International audience",
+        "Roman Urdu": "🇵🇰 Pakistani audience — 3-4x more engagement",
+        "Hinglish": "🔀 Mixed audience — natural, relatable",
+    }
+    st.caption(lang_note[language])
+
+    # [NEW] Image toggle
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("**🖼️ Post with Image**")
+    use_image = st.toggle("Generate image automatically", value=True)
+    if use_image:
+        st.caption("Free via Pollinations.ai — no API key needed")
+
     st.markdown("---")
     st.markdown("### 📊 Quick Stats")
 
@@ -546,7 +581,7 @@ with tab1:
 
             for i, var_type in enumerate(["Emotional", "Educational", "Bold/Controversial"]):
                 progress.progress((i * 33), text=f"Generating {var_type} version...")
-                result = generate_single(niche, selected_hook, var_type, tone_level, _api_key)
+                result = generate_single(niche, selected_hook, var_type, tone_level, _api_key, language=language)
                 variations_result[var_type] = result
 
             progress.progress(100, text="Done!")
@@ -555,10 +590,12 @@ with tab1:
             if any(r.get("error") in ("GROQ_INVALID_KEY", "NO_API_KEY") for r in variations_result.values()):
                 st.markdown('<div class="status-error">❌ Invalid or missing Groq API key. Check Settings.</div>', unsafe_allow_html=True)
             else:
-                st.session_state["variations"] = variations_result
+                st.session_state["variations"]       = variations_result
                 st.session_state["generation_niche"] = niche
-                st.session_state["generation_hook"] = selected_hook["name"]
-                st.session_state["generation_tone"] = tone_level
+                st.session_state["generation_hook"]  = selected_hook["name"]
+                st.session_state["generation_tone"]  = tone_level
+                st.session_state["generation_lang"]  = language
+                st.session_state["generation_img"]   = use_image
 
     # ── [NEW] VARIATIONS DISPLAY — 3 tabs with highlighted preview ──
     if "variations" in st.session_state:
@@ -661,7 +698,8 @@ with tab1:
                         new_result = generate_single(
                             st.session_state.get("generation_niche", niche),
                             get_hook_by_name(st.session_state.get("generation_hook", selected_hook["name"])),
-                            var_key, gen_tone, get_api_key(cfg)
+                            var_key, gen_tone, get_api_key(cfg),
+                            language=st.session_state.get("generation_lang", "English")
                         )
                     st.session_state["variations"][var_key] = new_result
                     st.session_state[session_key] = new_result.get("text", "")
@@ -672,6 +710,7 @@ with tab1:
                     token   = cfg.get("page_token", "")
                     page_id = cfg.get("page_id", "")
                     final_text = edited.strip()
+                    want_image = st.session_state.get("generation_img", True)
 
                     if not token or not page_id:
                         st.markdown(
@@ -681,15 +720,40 @@ with tab1:
                     elif not final_text:
                         st.markdown('<div class="status-error">❌ Post text is empty.</div>', unsafe_allow_html=True)
                     else:
-                        with st.spinner("Posting to Facebook..."):
-                            fb_result = post_to_facebook(page_id, token, final_text)
+                        # Show image preview first if enabled
+                        if want_image:
+                            gen_niche_img = st.session_state.get("generation_niche", niche)
+                            img_url = generate_image_url(gen_niche_img, final_text)
+                            st.markdown("**🖼️ Post Image Preview:**")
+                            st.image(img_url, use_column_width=True)
+                            st.caption("Image auto-generated by Pollinations.ai")
 
-                        if fb_result.get("success"):
+                            col_img, col_txt = st.columns(2)
+                            with col_img:
+                                post_with_img = st.button("📸 Post with Image", type="primary", key=f"post_img_{var_key}")
+                            with col_txt:
+                                post_text_only = st.button("📝 Post Text Only", key=f"post_txt_{var_key}")
+                        else:
+                            post_with_img = False
+                            post_text_only = True
+
+                        # Execute post
+                        if post_with_img:
+                            with st.spinner("Generating image & posting to Facebook..."):
+                                gen_niche_img = st.session_state.get("generation_niche", niche)
+                                img_url = generate_image_url(gen_niche_img, final_text)
+                                fb_result = post_image_to_facebook(page_id, token, img_url, final_text)
+                        elif post_text_only:
+                            with st.spinner("Posting to Facebook..."):
+                                fb_result = post_to_facebook(page_id, token, final_text)
+                        else:
+                            fb_result = None
+
+                        if fb_result and fb_result.get("success"):
                             st.markdown(
                                 f'<div class="status-success">✅ Posted! Post ID: {fb_result.get("id")}</div>',
                                 unsafe_allow_html=True
                             )
-                            # [NEW] Extended record via analytics module
                             record = analytics.record_post(
                                 text=final_text,
                                 niche=st.session_state.get("generation_niche", niche),
@@ -703,7 +767,7 @@ with tab1:
                             del st.session_state["variations"]
                             st.balloons()
                             st.rerun()
-                        else:
+                        elif fb_result and not fb_result.get("success"):
                             st.markdown(
                                 f'<div class="status-error">❌ Facebook Error: {fb_result.get("error")}</div>',
                                 unsafe_allow_html=True
@@ -738,7 +802,7 @@ with tab2:
                 st.markdown(f"### {slot['label']}")
             with col2:
                 st.markdown(f"**Niche:** {slot['niche']}")
-                st.markdown(f"**Hook:** {hook['name']}")
+                st.markdown(f"**Hook:** {hook['name']} · **Language:** {slot.get('language','English')}")
                 st.markdown(f"**Variation:** {slot['variation']} · **Tone:** {slot['tone']}/10")
         st.markdown("---")
 
