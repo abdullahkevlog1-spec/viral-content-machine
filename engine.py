@@ -2,10 +2,10 @@
 #  engine.py — Viral Content Generation Engine
 #  NEW FILE — handles all AI logic, hooks, niche profiles, anti-generic filter
 # ═══════════════════════════════════════════════════════════════════════════
-
+ 
 import requests
 import random
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HOOK STYLES LIBRARY  (12 psychology-backed hooks)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ HOOK_STYLES = [
         "psychology": "Before/after contrast activates aspiration, hope, and belief in change"
     },
 ]
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  NICHE PROFILES — tone, audience, CTA library per niche
 # ─────────────────────────────────────────────────────────────────────────────
@@ -225,11 +225,12 @@ NICHE_PROFILES = {
         ]
     }
 }
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ANTI-GENERIC FILTER — rejects clichéd, low-engagement output
 # ─────────────────────────────────────────────────────────────────────────────
 GENERIC_PHRASES = [
+    # Original banned
     "stay motivated", "work hard every day", "never give up", "success is important",
     "believe in yourself", "just keep going", "you can do it", "dream big",
     "hustle every day", "grind never stops", "be positive", "think positive",
@@ -237,19 +238,51 @@ GENERIC_PHRASES = [
     "great things take time", "success is a journey", "be the best version of yourself",
     "unlock your potential", "embrace the journey", "one step at a time",
     "the sky is the limit", "reach for the stars", "hard work pays off",
-    "every day is a new opportunity", "make every day count"
+    "every day is a new opportunity", "make every day count",
+    # New strict additions
+    "in today's world", "in today's fast", "in the digital age",
+    "it's no secret", "the truth is", "at the end of the day",
+    "game changer", "game-changer", "think outside the box",
+    "hit the ground running", "move the needle", "low hanging fruit",
+    "paradigm shift", "synergy", "disruptive", "leverage",
+    "in conclusion", "to sum up", "as we all know",
+    "the future is", "exciting times", "we live in a world",
+    "it is what it is", "take it to the next level",
+    "do what you love", "follow your passion", "make a difference",
+    "change the world", "create impact", "add value",
+    "most people don't realize", "what nobody tells you",
+    "secret that nobody", "hack your way", "10x your",
 ]
-
+ 
+WEAK_OPENERS = [
+    "in today", "the truth", "it's no", "as we", "we live",
+    "most people", "let me tell", "here's the thing",
+    "i want to", "i am going to", "this post is about",
+]
+ 
 def is_generic(text: str) -> bool:
-    """Returns True if text contains 2+ generic phrases = reject and regenerate."""
+    """Returns True if text contains ANY generic phrase — strict mode."""
     text_lower = text.lower()
-    hits = sum(1 for phrase in GENERIC_PHRASES if phrase in text_lower)
-    return hits >= 2
-
+    # Reject on even 1 banned phrase
+    for phrase in GENERIC_PHRASES:
+        if phrase in text_lower:
+            return True
+    # Reject weak openers
+    first_line = text_lower.split("\n")[0].strip()
+    for opener in WEAK_OPENERS:
+        if first_line.startswith(opener):
+            return True
+    return False
+ 
 def is_too_short(text: str) -> bool:
-    """Reject posts under 80 characters — too thin to be engaging."""
-    return len(text.strip()) < 80
-
+    """Reject posts under 150 characters or fewer than 3 paragraphs."""
+    if len(text.strip()) < 150:
+        return True
+    paragraphs = [p for p in text.strip().split("\n\n") if p.strip()]
+    if len(paragraphs) < 2:
+        return True
+    return False
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  TONE LEVEL DESCRIPTIONS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -260,7 +293,7 @@ def tone_descriptor(level: int) -> str:
         return "balanced and direct — engaging, slightly bold, confident voice"
     else:
         return "aggressive and provocative — bold claims, challenge common beliefs, create debate. Be fearless."
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  PROMPT BUILDER — constructs engineered prompt per variation
 # ─────────────────────────────────────────────────────────────────────────────
@@ -279,18 +312,18 @@ VARIATION_INSTRUCTIONS = {
         "Be bold, provocative, and confident. Not offensive — but definitely uncomfortable for some."
     )
 }
-
+ 
 def build_prompt(niche: str, hook_style: dict, variation: str, tone_level: int) -> str:
     profile = NICHE_PROFILES[niche]
     hook_examples = "\n".join([f'  • "{ex}"' for ex in hook_style["examples"]])
     hashtags_sample = " ".join(random.sample(profile["hashtag_pool"], min(5, len(profile["hashtag_pool"]))))
-
+ 
     prompt = f"""You are an elite viral Facebook content strategist with 10 years of growth experience.
 Your posts consistently get 10x more engagement than average.
-
+ 
 ═══ MISSION ═══
 Write a Facebook post that stops the scroll, triggers emotion, and drives comments/shares.
-
+ 
 ═══ PARAMETERS ═══
 NICHE: {niche}
 TARGET AUDIENCE: {profile['audience']}
@@ -302,47 +335,51 @@ HOOK STYLE: {hook_style['name']}
 {hook_examples}
 VARIATION TYPE: {variation}
   Instruction: {VARIATION_INSTRUCTIONS[variation]}
-
+ 
 ═══ MANDATORY POST STRUCTURE ═══
 Write the post in this EXACT 4-part format, each section separated by a blank line:
-
+ 
 [PART 1 — HOOK]
 One single, powerful scroll-stopping line. Use the {hook_style['id']} hook style.
 Short. Punchy. Makes the reader NEED to keep reading.
-
+ 
 [PART 2 — VALUE]
 2-3 short lines delivering the core insight or benefit.
 One idea per line. Mobile-friendly. No waffle.
-
+ 
 [PART 3 — SECOND PUNCH]
 1-2 lines that land a fresh angle or reinforce the message with new energy.
 Hit them again from a different direction.
-
+ 
 [PART 4 — CTA]
 One dynamic call to action. Make it feel natural, not salesy.
 Drive comments, follows, or saves. Relevant to {niche}.
 Suggested hashtags to end with: {hashtags_sample}
-
+ 
 ═══ HARD RULES ═══
 1. Return ONLY the post text. Zero labels. Zero "Here is your post:" preamble.
 2. Max 12 words per line. Short = readable on mobile.
 3. Use {profile['emojis']} emojis naturally — 2 to 5 total.
 4. End with 4-6 relevant hashtags on the final line only.
 5. BANNED PHRASES (instant reject): "stay motivated", "work hard", "believe in yourself",
-   "never give up", "you can do it", "success is a journey", "dream big", "be positive".
-6. Be SPECIFIC. Give REAL insight. If someone can nod and move on — rewrite it.
-7. Make someone feel: "I've never heard it put exactly that way."
-
+   "never give up", "you can do it", "success is a journey", "dream big", "be positive",
+   "in today's world", "game changer", "think outside the box", "the future is bright",
+   "most people don't realize", "it's no secret", "at the end of the day".
+6. Do NOT start with "In today's", "The truth is", "As we all know", "Most people".
+7. Be SPECIFIC. Give REAL insight. If someone can nod and move on — rewrite it.
+8. Make someone feel: "I've never heard it put exactly that way."
+9. Every line must earn its place. No filler. No waffle. No vague statements.
+ 
 Write the post now. Start directly with the hook:"""
-
+ 
     return prompt
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SINGLE POST GENERATOR (with anti-generic retry loop)
 # ─────────────────────────────────────────────────────────────────────────────
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-
+ 
 def generate_single(niche: str, hook_style: dict, variation: str, tone_level: int,
                     api_key: str, max_retries: int = 3) -> dict:
     """
@@ -352,10 +389,10 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
     """
     if not api_key or not api_key.strip():
         return {"text": "", "error": "NO_API_KEY", "retries": 0, "flagged_generic": False}
-
+ 
     last_text = ""
     flagged = False
-
+ 
     for attempt in range(max_retries):
         prompt = build_prompt(niche, hook_style, variation, tone_level)
         temperature = round(0.82 + (attempt * 0.06), 2)
@@ -375,35 +412,35 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
                 },
                 timeout=30
             )
-
+ 
             if response.status_code == 401:
                 return {"text": "", "error": "GROQ_INVALID_KEY", "retries": attempt, "flagged_generic": False}
             if response.status_code == 429:
                 return {"text": "", "error": "GROQ_RATE_LIMIT", "retries": attempt, "flagged_generic": False}
             if response.status_code != 200:
                 return {"text": "", "error": f"GROQ_HTTP_{response.status_code}", "retries": attempt, "flagged_generic": False}
-
+ 
             data = response.json()
             text = data["choices"][0]["message"]["content"].strip()
             last_text = text
-
+ 
             # Quality gates
             if is_too_short(text):
                 continue
             if is_generic(text):
                 flagged = True
                 continue
-
+ 
             return {"text": text, "error": None, "retries": attempt, "flagged_generic": False}
-
+ 
         except requests.exceptions.ConnectionError:
             return {"text": "", "error": "NETWORK_ERROR", "retries": attempt, "flagged_generic": False}
         except Exception as e:
             return {"text": "", "error": str(e), "retries": attempt, "flagged_generic": False}
-
+ 
     return {"text": last_text, "error": None, "retries": max_retries, "flagged_generic": flagged}
-
-
+ 
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  THREE VARIATIONS GENERATOR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -416,8 +453,8 @@ def generate_three_variations(niche: str, hook_style: dict, tone_level: int, api
     for variation in ["Emotional", "Educational", "Bold/Controversial"]:
         results[variation] = generate_single(niche, hook_style, variation, tone_level, api_key)
     return results
-
-
+ 
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  POST STRUCTURE PARSER — extracts hook & CTA paragraphs for highlighted preview
 # ─────────────────────────────────────────────────────────────────────────────
@@ -440,8 +477,8 @@ def parse_post_sections(text: str) -> dict:
     else:
         lines = text.strip().split("\n")
         return {"hook": lines[0] if lines else text, "body": "\n".join(lines[1:-1]), "cta": lines[-1] if len(lines) > 1 else ""}
-
-
+ 
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HOOK STYLE LOOKUP
 # ─────────────────────────────────────────────────────────────────────────────
@@ -450,10 +487,10 @@ def get_hook_by_id(hook_id: str) -> dict:
         if h["id"] == hook_id:
             return h
     return HOOK_STYLES[0]
-
+ 
 def get_hook_names() -> list:
     return [h["name"] for h in HOOK_STYLES]
-
+ 
 def get_hook_by_name(name: str) -> dict:
     for h in HOOK_STYLES:
         if h["name"] == name:
