@@ -2,14 +2,14 @@
 #  app.py — Viral Content Machine (Facebook Auto Poster v2)
 #  MODIFIED from original — all new/changed sections marked with # [NEW] or # [MODIFIED]
 # ═══════════════════════════════════════════════════════════════════════════
-
+ 
 import streamlit as st
 import requests
 import json
 import os
 import random
 from datetime import datetime
-
+ 
 # [NEW] Import our new modules
 from engine import (
     HOOK_STYLES, NICHE_PROFILES,
@@ -18,7 +18,7 @@ from engine import (
     parse_post_sections
 )
 import analytics
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  PAGE CONFIG  [MODIFIED — layout changed to wide for new sidebar]
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,21 +27,21 @@ st.set_page_config(
     page_icon="🔥",
     layout="wide"
 )
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CSS  [MODIFIED — extended original styles + new components]
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
-
+ 
 html, body, [class*="css"] {
     font-family: 'DM Sans', sans-serif;
     background-color: #080a14;
     color: #e2e0f0;
 }
 h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
-
+ 
 /* ── Header ── */
 .main-title {
     font-family: 'Syne', sans-serif;
@@ -59,7 +59,7 @@ h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
     margin-top: 3px;
     margin-bottom: 1.6rem;
 }
-
+ 
 /* ── Variation tabs ── */
 .var-label {
     font-family: 'Syne', sans-serif;
@@ -75,7 +75,7 @@ h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
 .var-emotional   { background:#2d1b3d; color:#c084fc; border:1px solid #7c3aed; }
 .var-educational { background:#0f2030; color:#38bdf8; border:1px solid #0369a1; }
 .var-bold        { background:#2d1000; color:#fb923c; border:1px solid #c2410c; }
-
+ 
 /* ── Post preview sections ── */
 .preview-container {
     background: #10121f;
@@ -126,7 +126,7 @@ h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
     color: #16a34a;
     margin-bottom: 5px;
 }
-
+ 
 /* ── Status banners ── */
 .status-success {
     background: #0a2010;
@@ -155,7 +155,7 @@ h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
     font-size: 0.88rem;
     margin-top: 0.5rem;
 }
-
+ 
 /* ── Badges ── */
 .badge {
     display: inline-block;
@@ -169,7 +169,7 @@ h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
     margin-right: 5px;
     margin-bottom: 5px;
 }
-
+ 
 /* ── Stat cards ── */
 .stat-card {
     background: #10121f;
@@ -192,7 +192,7 @@ h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
     letter-spacing: 0.08em;
     margin-top: 4px;
 }
-
+ 
 /* ── History items ── */
 .history-item {
     background: #0d0f1e;
@@ -218,18 +218,18 @@ h1, h2, h3 { font-family: 'Syne', sans-serif !important; }
     border: 1px solid #4c1d95;
     margin-left: 6px;
 }
-
+ 
 /* ── Sidebar ── */
 section[data-testid="stSidebar"] {
     background: #0c0e1b !important;
     border-right: 1px solid #14172b;
 }
-
+ 
 /* ── Tone slider label override ── */
 .tone-safe    { color: #4ade80; }
 .tone-mid     { color: #facc15; }
 .tone-aggro   { color: #f97316; }
-
+ 
 /* ── Hook card ── */
 .hook-info {
     background: #0f112a;
@@ -241,7 +241,7 @@ section[data-testid="stSidebar"] {
     margin-bottom: 1rem;
     font-style: italic;
 }
-
+ 
 div[data-testid="stButton"] button {
     border-radius: 8px !important;
     font-family: 'DM Sans', sans-serif !important;
@@ -249,23 +249,23 @@ div[data-testid="stButton"] button {
 }
 </style>
 """, unsafe_allow_html=True)
-
-
+ 
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CONFIG  [kept from original, extended with new fields]
 # ─────────────────────────────────────────────────────────────────────────────
 CONFIG_FILE = "fb_config.json"
-
+ 
 def load_config() -> dict:
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
     return {"page_token": "", "page_id": "", "gemini_api_key": ""}
-
+ 
 def save_config(cfg: dict):
     with open(CONFIG_FILE, "w") as f:
         json.dump(cfg, f)
-
+ 
 def get_api_key(cfg: dict) -> str:
     """Get Gemini API key — Streamlit Secrets (cloud) first, then local config."""
     try:
@@ -275,7 +275,7 @@ def get_api_key(cfg: dict) -> str:
     except Exception:
         pass
     return cfg.get("gemini_api_key", "")
-
+ 
 # ── Facebook Poster [kept from original, unchanged] ──
 def post_to_facebook(page_id: str, page_token: str, message: str):
     url = f"https://graph.facebook.com/v19.0/{page_id}/feed"
@@ -287,27 +287,27 @@ def post_to_facebook(page_id: str, page_token: str, message: str):
         return False, data.get("error", {}).get("message", "Unknown Facebook error")
     except Exception as e:
         return False, str(e)
-
-
+ 
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  LOAD STATE
 # ─────────────────────────────────────────────────────────────────────────────
 cfg     = load_config()
 history = analytics.load_history()
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HEADER
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="main-title">🔥 Viral Content Machine</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Facebook growth engine · Powered by Ollama (local, free, offline)</div>', unsafe_allow_html=True)
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  [NEW] SIDEBAR — Niche, Hook Style, Tone Slider
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Content Controls")
     st.markdown("---")
-
+ 
     # [NEW] Niche selector
     st.markdown("**Niche**")
     niche = st.selectbox(
@@ -315,9 +315,9 @@ with st.sidebar:
         list(NICHE_PROFILES.keys()),
         label_visibility="collapsed"
     )
-
+ 
     st.markdown("<br>", unsafe_allow_html=True)
-
+ 
     # [NEW] Hook style selector
     st.markdown("**Hook Style**")
     hook_options = get_hook_names()
@@ -327,24 +327,24 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     selected_hook = get_hook_by_name(selected_hook_name)
-
+ 
     # Show hook psychology tip
     st.markdown(
         f'<div class="hook-info">🧠 <b>Psychology:</b> {selected_hook["psychology"]}</div>',
         unsafe_allow_html=True
     )
-
+ 
     # [NEW] Random hook button
     if st.button("🎲 Random Hook", use_container_width=True):
         st.session_state["random_hook"] = random.choice(HOOK_STYLES)
         st.rerun()
-
+ 
     if "random_hook" in st.session_state:
         selected_hook = st.session_state["random_hook"]
         st.markdown(f'<span class="badge">{selected_hook["name"]}</span>', unsafe_allow_html=True)
-
+ 
     st.markdown("<br>", unsafe_allow_html=True)
-
+ 
     # [NEW] Tone control slider
     st.markdown("**Tone Level**")
     tone_level = st.slider(
@@ -352,7 +352,7 @@ with st.sidebar:
         min_value=1, max_value=10, value=5,
         label_visibility="collapsed"
     )
-
+ 
     if tone_level <= 3:
         tone_label = '<span class="tone-safe">🟢 Safe — informative, warm</span>'
     elif tone_level <= 6:
@@ -360,10 +360,10 @@ with st.sidebar:
     else:
         tone_label = '<span class="tone-aggro">🔴 Aggressive — bold, provocative</span>'
     st.markdown(tone_label, unsafe_allow_html=True)
-
+ 
     st.markdown("---")
     st.markdown("### 📊 Quick Stats")
-
+ 
     # [NEW] Mini stats
     col_a, col_b = st.columns(2)
     with col_a:
@@ -378,14 +378,14 @@ with st.sidebar:
             <div class="stat-number">{analytics.posts_today(history)}</div>
             <div class="stat-label">Today</div>
         </div>""", unsafe_allow_html=True)
-
+ 
     st.markdown(f"""
     <div class="stat-card" style="margin-top:8px">
         <div class="stat-number">{analytics.posts_this_week(history)}</div>
         <div class="stat-label">This Week</div>
     </div>""", unsafe_allow_html=True)
-
-
+ 
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 #  MAIN TABS  [MODIFIED — 4 tabs now, Analytics is new]
 # ─────────────────────────────────────────────────────────────────────────────
@@ -395,13 +395,13 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "📜 History",
     "📊 Analytics"   # [NEW]
 ])
-
-
+ 
+ 
 # ═════════════════════════════════════════════════════════════════════════════
 #  TAB 1 — GENERATE & POST  [HEAVILY MODIFIED]
 # ═════════════════════════════════════════════════════════════════════════════
 with tab1:
-
+ 
     # ── Generate button row ──
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -413,13 +413,13 @@ with tab1:
     with col2:
         # [NEW] Quick single regenerate
         regen_single = st.button("🎲 New Hook + Regen", use_container_width=True)
-
+ 
     # [NEW] Handle random hook + regenerate
     if regen_single:
         st.session_state["random_hook"] = random.choice(HOOK_STYLES)
         selected_hook = st.session_state["random_hook"]
         generate_btn = True  # Trigger generation below
-
+ 
     # ── [NEW] GENERATION — 3 variations ──
     if generate_btn:
         _api_key = get_api_key(cfg)
@@ -428,55 +428,55 @@ with tab1:
         else:
             progress = st.progress(0, text="Starting generation...")
             variations_result = {}
-
+ 
             for i, var_type in enumerate(["Emotional", "Educational", "Bold/Controversial"]):
                 progress.progress((i * 33), text=f"Generating {var_type} version...")
                 result = generate_single(niche, selected_hook, var_type, tone_level, _api_key)
                 variations_result[var_type] = result
-
+ 
             progress.progress(100, text="Done!")
             progress.empty()
-
-            if any(r.get("error") in ("GEMINI_INVALID_KEY", "NO_API_KEY") for r in variations_result.values()):
-                st.markdown('<div class="status-error">❌ Invalid or missing Gemini API key. Check Settings.</div>', unsafe_allow_html=True)
+ 
+            if any(r.get("error") in ("GROQ_INVALID_KEY", "NO_API_KEY") for r in variations_result.values()):
+                st.markdown('<div class="status-error">❌ Invalid or missing Groq API key. Check Settings.</div>', unsafe_allow_html=True)
             else:
                 st.session_state["variations"] = variations_result
                 st.session_state["generation_niche"] = niche
                 st.session_state["generation_hook"] = selected_hook["name"]
                 st.session_state["generation_tone"] = tone_level
-
+ 
     # ── [NEW] VARIATIONS DISPLAY — 3 tabs with highlighted preview ──
     if "variations" in st.session_state:
         variations = st.session_state["variations"]
-
+ 
         st.markdown("---")
         st.markdown("#### Choose a Version to Post")
-
+ 
         # Meta badges
         gen_niche = st.session_state.get("generation_niche", niche)
         gen_hook  = st.session_state.get("generation_hook", selected_hook["name"])
         gen_tone  = st.session_state.get("generation_tone", tone_level)
         tone_icon = "🟢" if gen_tone <= 3 else ("🟡" if gen_tone <= 6 else "🔴")
-
+ 
         st.markdown(
             f'<span class="badge">{gen_niche}</span>'
             f'<span class="badge">{gen_hook}</span>'
             f'<span class="badge">{tone_icon} Tone {gen_tone}/10</span>',
             unsafe_allow_html=True
         )
-
+ 
         var_labels = {
             "Emotional": ("var-emotional", "💜 Emotional"),
             "Educational": ("var-educational", "💙 Educational"),
             "Bold/Controversial": ("var-bold", "🔥 Bold/Controversial")
         }
-
+ 
         v_tab1, v_tab2, v_tab3 = st.tabs([
             "💜 Emotional",
             "💙 Educational",
             "🔥 Bold/Controversial"
         ])
-
+ 
         def render_variation_tab(tab_obj, var_key, css_class, label):
             with tab_obj:
                 result = variations.get(var_key, {})
@@ -484,11 +484,11 @@ with tab1:
                 error  = result.get("error")
                 retries = result.get("retries", 0)
                 flagged = result.get("flagged_generic", False)
-
+ 
                 if error and error != "generic_warning":
                     st.markdown(f'<div class="status-error">❌ {error}</div>', unsafe_allow_html=True)
                     return
-
+ 
                 if flagged:
                     st.markdown(
                         '<div class="status-warning">⚠️ Anti-generic filter triggered. Output may be borderline — consider regenerating.</div>',
@@ -496,7 +496,7 @@ with tab1:
                     )
                 if retries > 0 and not flagged:
                     st.caption(f"ℹ️ Regenerated {retries}x to pass quality filter.")
-
+ 
                 # [NEW] Highlighted preview with hook + CTA sections
                 if text:
                     sections = parse_post_sections(text)
@@ -513,12 +513,12 @@ with tab1:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-
+ 
                 # [NEW] Editable text area
                 session_key = f"edit_{var_key}"
                 if session_key not in st.session_state:
                     st.session_state[session_key] = text
-
+ 
                 edited = st.text_area(
                     "✏️ Edit before posting:",
                     value=st.session_state[session_key],
@@ -526,7 +526,7 @@ with tab1:
                     key=f"textarea_{var_key}"
                 )
                 st.session_state[session_key] = edited
-
+ 
                 # [NEW] Action buttons: Approve & Post + Regen this one
                 c1, c2 = st.columns([3, 1])
                 with c1:
@@ -539,7 +539,7 @@ with tab1:
                 with c2:
                     regen_this = st.button("🔄", key=f"regen_{var_key}", use_container_width=True,
                                            help=f"Regenerate only this variation")
-
+ 
                 # Regen single variation
                 if regen_this:
                     with st.spinner(f"Regenerating {var_key}..."):
@@ -551,13 +551,13 @@ with tab1:
                     st.session_state["variations"][var_key] = new_result
                     st.session_state[session_key] = new_result.get("text", "")
                     st.rerun()
-
+ 
                 # Post to Facebook
                 if post_btn:
                     token   = cfg.get("page_token", "")
                     page_id = cfg.get("page_id", "")
                     final_text = edited.strip()
-
+ 
                     if not token or not page_id:
                         st.markdown(
                             '<div class="status-error">❌ Add your Facebook credentials in Settings first.</div>',
@@ -568,7 +568,7 @@ with tab1:
                     else:
                         with st.spinner("Posting to Facebook..."):
                             success, result_info = post_to_facebook(page_id, token, final_text)
-
+ 
                         if success:
                             st.markdown(
                                 f'<div class="status-success">✅ Posted! Post ID: {result_info}</div>',
@@ -593,19 +593,19 @@ with tab1:
                                 f'<div class="status-error">❌ Facebook Error: {result_info}</div>',
                                 unsafe_allow_html=True
                             )
-
+ 
         render_variation_tab(v_tab1, "Emotional",         "var-emotional", "💜 Emotional")
         render_variation_tab(v_tab2, "Educational",       "var-educational", "💙 Educational")
         render_variation_tab(v_tab3, "Bold/Controversial","var-bold", "🔥 Bold")
-
-
+ 
+ 
 # ═════════════════════════════════════════════════════════════════════════════
 #  TAB 2 — SETTINGS  [kept from original + minor UX improvements]
 # ═════════════════════════════════════════════════════════════════════════════
 with tab2:
     st.markdown("#### 🔐 Facebook Credentials")
     st.info("Saved locally on your PC in `fb_config.json`. Never transmitted anywhere except Facebook's own API.")
-
+ 
     page_token = st.text_input(
         "Page Access Token",
         value=cfg.get("page_token", ""),
@@ -617,9 +617,9 @@ with tab2:
         value=cfg.get("page_id", ""),
         placeholder="e.g. 123456789012345"
     )
-    st.markdown("#### 🤖 Google AI Studio (Gemini)")
-    st.markdown("Get your **free** API key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — no credit card needed.")
-
+    st.markdown("#### 🤖 Groq AI (Free & Fast)")
+    st.markdown("Get your **free** API key at [console.groq.com](https://console.groq.com) → API Keys → Create API Key")
+ 
     # Show info if key is coming from Streamlit Secrets (cloud deployment)
     cloud_key = False
     try:
@@ -627,7 +627,7 @@ with tab2:
             cloud_key = True
     except Exception:
         pass
-
+ 
     if cloud_key:
         st.success("✅ Gemini API key loaded from Streamlit Secrets (cloud deployment)")
     else:
@@ -637,7 +637,7 @@ with tab2:
             type="password",
             placeholder="AIza..."
         )
-
+ 
     if st.button("💾 Save Settings", type="primary"):
         new_cfg = {
             "page_token": page_token,
@@ -650,9 +650,9 @@ with tab2:
         save_config(new_cfg)
         cfg = load_config()
         st.success("✅ Saved!")
-
+ 
     st.markdown("---")
-    st.markdown("#### 🔌 Test Gemini Connection")
+    st.markdown("#### 🔌 Test Groq Connection")
     if st.button("Test Connection"):
         test_key = get_api_key(cfg)
         if not test_key:
@@ -660,27 +660,27 @@ with tab2:
         else:
             try:
                 r = requests.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={test_key}",
-                    json={"contents": [{"parts": [{"text": "Say OK"}]}]},
-                    headers={"Content-Type": "application/json"},
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": "Say OK"}], "max_tokens": 5},
+                    headers={"Authorization": f"Bearer {test_key}", "Content-Type": "application/json"},
                     timeout=10
                 )
                 if r.status_code == 200:
-                    st.success("✅ Gemini API connected! Model: gemini-2.0-flash")
+                    st.success("✅ Groq API connected! Model: llama-3.3-70b-versatile")
                 elif r.status_code in (401, 403):
-                    st.error("❌ Invalid API key. Check your Google AI Studio key.")
+                    st.error("❌ Invalid API key. Check your Groq key.")
                 else:
                     st.error(f"❌ API error {r.status_code}: {r.text[:200]}")
             except Exception as e:
                 st.error(f"❌ Network error: {e}")
-
-
+ 
+ 
 # ═════════════════════════════════════════════════════════════════════════════
 #  TAB 3 — HISTORY  [MODIFIED — shows new fields: hook, variation, tone]
 # ═════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.markdown("#### 📜 Post History")
-
+ 
     if not history:
         st.markdown('<div style="color:#3d3d5a; font-size:0.9rem; padding:1rem 0;">No posts yet. Generate your first viral post above!</div>', unsafe_allow_html=True)
     else:
@@ -691,7 +691,7 @@ with tab3:
             tone_val      = item.get("tone_level", "")
             tone_disp     = f"Tone {tone_val}" if tone_val else ""
             post_id_disp  = item.get('post_id', '—')
-
+ 
             st.markdown(f"""
             <div class="history-item">
                 <div class="history-meta">
@@ -705,19 +705,19 @@ with tab3:
                 {item.get('text','')[:220]}{'...' if len(item.get('text','')) > 220 else ''}
             </div>
             """, unsafe_allow_html=True)
-
+ 
         if st.button("🗑️ Clear History", type="secondary"):
             analytics.save_history([])
             st.rerun()
-
-
+ 
+ 
 # ═════════════════════════════════════════════════════════════════════════════
 #  TAB 4 — ANALYTICS  [NEW TAB]
 # ═════════════════════════════════════════════════════════════════════════════
 with tab4:
     st.markdown("#### 📊 Engagement Analytics")
     st.caption("Hook and niche performance tracking. Engagement fields (likes/comments/shares) are ready — connect Facebook Insights API in the future to auto-fill them.")
-
+ 
     if not history:
         st.info("Post some content first to see analytics here.")
     else:
@@ -725,7 +725,7 @@ with tab4:
         total  = len(history)
         today  = analytics.posts_today(history)
         weekly = analytics.posts_this_week(history)
-
+ 
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown(f'<div class="stat-card"><div class="stat-number">{total}</div><div class="stat-label">Total Posts</div></div>', unsafe_allow_html=True)
@@ -733,11 +733,11 @@ with tab4:
             st.markdown(f'<div class="stat-card"><div class="stat-number">{weekly}</div><div class="stat-label">This Week</div></div>', unsafe_allow_html=True)
         with c3:
             st.markdown(f'<div class="stat-card"><div class="stat-number">{today}</div><div class="stat-label">Today</div></div>', unsafe_allow_html=True)
-
+ 
         st.markdown("<br>", unsafe_allow_html=True)
-
+ 
         col_left, col_right = st.columns(2)
-
+ 
         # [NEW] Hook usage breakdown
         with col_left:
             st.markdown("**🔍 Hook Style Usage**")
@@ -757,7 +757,7 @@ with tab4:
                     )
             else:
                 st.caption("No hook data yet.")
-
+ 
         # [NEW] Niche + Variation breakdown
         with col_right:
             st.markdown("**📂 Niche Distribution**")
@@ -770,7 +770,7 @@ with tab4:
                     f'</div>',
                     unsafe_allow_html=True
                 )
-
+ 
             st.markdown("<br>**🎭 Variation Usage**")
             var_summary = analytics.variation_usage_summary(history)
             var_colors  = {"Emotional": "#c084fc", "Educational": "#38bdf8", "Bold/Controversial": "#fb923c"}
@@ -783,7 +783,7 @@ with tab4:
                     f'</div>',
                     unsafe_allow_html=True
                 )
-
+ 
         st.markdown("---")
         st.markdown("**🎛️ Tone Level Distribution**")
         tone_data = analytics.tone_distribution(history)
@@ -800,6 +800,7 @@ with tab4:
                 f'</div>',
                 unsafe_allow_html=True
             )
-
+ 
         st.markdown("---")
         st.caption("💡 Future upgrade: connect Facebook Graph API Insights to auto-pull likes, comments, and reach per post — then this page will show which hook styles actually drive engagement for your audience.")
+ 
