@@ -340,13 +340,13 @@ Write the post now. Start directly with the hook:"""
 # ─────────────────────────────────────────────────────────────────────────────
 #  SINGLE POST GENERATOR (with anti-generic retry loop)
 # ─────────────────────────────────────────────────────────────────────────────
-GEMINI_MODEL = "gemini-2.0-flash"
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 def generate_single(niche: str, hook_style: dict, variation: str, tone_level: int,
                     api_key: str, max_retries: int = 3) -> dict:
     """
-    Generate one post using Google Gemini API.
+    Generate one post using Groq API (free, fast).
     Retries up to max_retries times if output is generic or too short.
     Returns: {"text": str, "error": None | str, "retries": int, "flagged_generic": bool}
     """
@@ -358,36 +358,33 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
 
     for attempt in range(max_retries):
         prompt = build_prompt(niche, hook_style, variation, tone_level)
-        temperature = round(0.82 + (attempt * 0.06), 2)  # Raise temp on retries
+        temperature = round(0.82 + (attempt * 0.06), 2)
         try:
-            url = GEMINI_API_URL.format(model=GEMINI_MODEL, api_key=api_key.strip())
             response = requests.post(
-                url,
+                GROQ_API_URL,
                 json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": temperature,
-                        "maxOutputTokens": 600,
-                        "topP": 0.92,
-                    }
+                    "model": GROQ_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                    "max_tokens": 600,
+                    "top_p": 0.92,
                 },
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Authorization": f"Bearer {api_key.strip()}",
+                    "Content-Type": "application/json"
+                },
                 timeout=30
             )
 
-            if response.status_code == 400:
-                return {"text": "", "error": "GEMINI_BAD_REQUEST", "retries": attempt, "flagged_generic": False}
-            if response.status_code == 401 or response.status_code == 403:
-                return {"text": "", "error": "GEMINI_INVALID_KEY", "retries": attempt, "flagged_generic": False}
+            if response.status_code == 401:
+                return {"text": "", "error": "GROQ_INVALID_KEY", "retries": attempt, "flagged_generic": False}
+            if response.status_code == 429:
+                return {"text": "", "error": "GROQ_RATE_LIMIT", "retries": attempt, "flagged_generic": False}
             if response.status_code != 200:
-                return {"text": "", "error": f"GEMINI_HTTP_{response.status_code}", "retries": attempt, "flagged_generic": False}
+                return {"text": "", "error": f"GROQ_HTTP_{response.status_code}", "retries": attempt, "flagged_generic": False}
 
             data = response.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                return {"text": "", "error": "GEMINI_NO_CANDIDATES", "retries": attempt, "flagged_generic": False}
-
-            text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+            text = data["choices"][0]["message"]["content"].strip()
             last_text = text
 
             # Quality gates
@@ -397,7 +394,6 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
                 flagged = True
                 continue
 
-            # Passed all checks
             return {"text": text, "error": None, "retries": attempt, "flagged_generic": False}
 
         except requests.exceptions.ConnectionError:
@@ -405,7 +401,6 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
         except Exception as e:
             return {"text": "", "error": str(e), "retries": attempt, "flagged_generic": False}
 
-    # Exhausted retries — return last output with a warning flag
     return {"text": last_text, "error": None, "retries": max_retries, "flagged_generic": flagged}
 
 
