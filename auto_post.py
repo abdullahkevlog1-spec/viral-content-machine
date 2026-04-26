@@ -218,6 +218,62 @@ def generate_image_prompt(niche: str, post_text: str, api_key: str) -> str:
     return f"{base}, no text, no words, photorealistic, 8k"
 
 
+def add_text_overlay(img_bytes: bytes, post_text: str, page_name: str = "AI with Abdullah") -> bytes:
+    """Add hook text + watermark overlay on image using Pillow."""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io, textwrap, re
+
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+        w, h = img.size
+
+        lines = [l.strip() for l in post_text.split("\n") if l.strip()]
+        hook = lines[0] if lines else ""
+        hook = re.sub(r"#\w+", "", hook).strip()
+        hook = re.sub(r"[^\x00-\x7F]+", " ", hook).strip()
+        if len(hook) > 70:
+            hook = hook[:67] + "..."
+
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw_ov  = ImageDraw.Draw(overlay)
+        grad_h   = int(h * 0.45)
+        for i in range(grad_h):
+            alpha = int(210 * (i / grad_h))
+            draw_ov.line([(0, h - grad_h + i), (w, h - grad_h + i)], fill=(0, 0, 0, alpha))
+        img = Image.alpha_composite(img, overlay)
+        draw = ImageDraw.Draw(img)
+
+        fs_hook = max(36, w // 22)
+        fs_wm   = max(18, w // 55)
+        try:
+            font_hook = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs_hook)
+            font_wm   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", fs_wm)
+        except Exception:
+            font_hook = ImageFont.load_default()
+            font_wm   = ImageFont.load_default()
+
+        wrapped = textwrap.fill(hook, width=max(20, w // (fs_hook // 2))).split("\n")
+        line_h  = fs_hook + 10
+        text_y  = h - len(wrapped) * line_h - int(h * 0.07)
+        for line in wrapped:
+            bbox   = draw.textbbox((0, 0), line, font=font_hook)
+            text_w = bbox[2] - bbox[0]
+            x = (w - text_w) // 2
+            draw.text((x + 3, text_y + 3), line, font=font_hook, fill=(0, 0, 0, 180))
+            draw.text((x, text_y), line, font=font_hook, fill=(255, 255, 255, 255))
+            text_y += line_h
+
+        wm_bbox = draw.textbbox((0, 0), page_name, font=font_wm)
+        draw.text((w - (wm_bbox[2] - wm_bbox[0]) - 20, h - fs_wm - 15), page_name, font=font_wm, fill=(255, 255, 255, 160))
+
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+    except Exception as e:
+        print(f"  Overlay failed: {e}")
+        return img_bytes
+
+
 def download_image(niche: str, post_text: str, api_key: str) -> bytes | None:
     prompt  = generate_image_prompt(niche, post_text, api_key)
     encoded = urllib.parse.quote(prompt)
@@ -227,8 +283,9 @@ def download_image(niche: str, post_text: str, api_key: str) -> bytes | None:
     try:
         r = requests.get(url, timeout=60)
         if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
-            print(f"  Image downloaded: {len(r.content)//1024}KB")
-            return r.content
+            raw = r.content
+            print(f"  Image downloaded: {len(raw)//1024}KB — applying overlay...")
+            return add_text_overlay(raw, post_text)
     except Exception as e:
         print(f"  Image download failed: {e}")
     return None
