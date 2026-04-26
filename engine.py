@@ -589,50 +589,202 @@ def get_hook_by_name(name: str) -> dict:
 #  IMAGE GENERATION — Pollinations.ai (free, no API key needed)
 # ─────────────────────────────────────────────────────────────────────────────
 
-NICHE_IMAGE_STYLES = {
-    "AI & Tech":          "futuristic digital neural network glowing blue circuit holographic interface, dark background, 4k",
-    "Motivation":         "cinematic golden sunrise mountain peak silhouette person standing victory, dramatic lighting, inspirational",
-    "Business & Finance": "modern minimalist corporate glass skyscraper city money abstract, professional dark navy gold",
-    "ASMR / Satisfying":  "ultra satisfying colorful slime pastel soap bubbles macro close-up, dreamy soft aesthetic",
-    "Health & Wellness":  "serene nature green forest yoga meditation peaceful morning light",
-    "Relationships":      "warm cozy coffee shop couple conversation bokeh soft lighting, cinematic",
-    "Comedy & Memes":     "colorful pop art bold comic style funny expressive cartoon character",
-    "News & Trends":      "breaking news bold red black dramatic modern editorial design",
+# ─────────────────────────────────────────────────────────────────────────────
+#  IMAGE GENERATION — Groq prompt → Pollinations.ai render → Facebook upload
+# ─────────────────────────────────────────────────────────────────────────────
+
+NICHE_BASE_STYLES = {
+    "AI & Tech":          "dark dramatic tech aesthetic, glowing neon blue and purple circuits, cinematic lighting, 8k ultra sharp",
+    "Motivation":         "epic cinematic landscape, lone figure on mountain peak at golden hour, dramatic god rays, award-winning photo",
+    "Business & Finance": "luxury minimalist dark office, gold accents, dramatic side lighting, ultra professional editorial photo",
+    "ASMR / Satisfying":  "extreme macro close-up satisfying texture, pastel rainbow colors, perfect symmetry, studio lighting, 8k",
+    "Health & Wellness":  "serene misty forest at sunrise, zen stone garden, soft dreamy bokeh, National Geographic style",
+    "Relationships":      "candid warm moment, shallow depth of field, golden hour bokeh, film grain, emotional cinematic",
+    "Comedy & Memes":     "vibrant pop art explosion, bold graphic style, high contrast comic colors, dynamic composition",
+    "News & Trends":      "dramatic editorial photo, bold red and black, sharp contrast, photojournalism award-winning",
 }
 
-def build_image_prompt(niche: str, post_text: str) -> str:
-    """Build a visual prompt from niche + first line of post."""
-    style = NICHE_IMAGE_STYLES.get(niche, "professional social media graphic vibrant modern design")
-    # Take first line of post as context (skip emojis/hashtags)
-    first_line = post_text.strip().split("\n")[0][:80] if post_text else ""
-    # Remove hashtags and emojis for cleaner prompt
-    import re
-    first_line = re.sub(r"#\w+", "", first_line).strip()
-    return f"{first_line}, {style}, no text, no words, Facebook post image 1200x630"
-
-def generate_image_url(niche: str, post_text: str) -> str:
+def generate_image_prompt_via_groq(niche: str, post_text: str, api_key: str) -> str:
     """
-    Returns a Pollinations.ai image URL — free, no API key, no rate limit.
-    Image is generated on-the-fly when URL is loaded.
+    Use Groq to generate a specific, vivid image prompt based on post content.
+    Falls back to niche style if Groq fails.
+    """
+    import re
+    # Clean post text — remove hashtags, emojis, Roman Urdu words
+    clean_text = re.sub(r"#\w+", "", post_text)
+    clean_text = re.sub(r"[^\x00-\x7F]+", "", clean_text)  # Remove non-ASCII
+    clean_text = clean_text.strip()[:300]
+
+    base_style = NICHE_BASE_STYLES.get(niche, "cinematic dramatic professional photography, 8k")
+
+    system = """You are a professional AI image prompt engineer.
+Given a social media post and niche, write ONE ultra-specific Stable Diffusion image prompt.
+Rules:
+- No text, no words, no letters in the image
+- Hyper-specific visual scene — NOT generic
+- Include: subject, lighting, mood, style, camera angle
+- Max 80 words
+- End with: no text, no words, photorealistic, 8k
+- Return ONLY the prompt. Nothing else."""
+
+    user = f"Niche: {niche}\nPost: {clean_text}\nBase style: {base_style}\n\nWrite the image prompt:"
+
+    try:
+        r = requests.post(
+            GROQ_API_URL,
+            json={
+                "model": GROQ_MODEL,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 120,
+            },
+            headers={"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"},
+            timeout=15
+        )
+        if r.status_code == 200:
+            prompt = r.json()["choices"][0]["message"]["content"].strip()
+            # Ensure no text instruction always appended
+            if "no text" not in prompt.lower():
+                prompt += ", no text, no words, photorealistic"
+            return prompt
+    except Exception:
+        pass
+
+    # Fallback
+    return f"{base_style}, no text, no words, photorealistic, 8k"
+
+
+def add_text_overlay(img_bytes: bytes, post_text: str, page_name: str = "AI with Abdullah") -> bytes:
+    """
+    Adds hook text + page watermark overlay on image using Pillow.
+    - Hook (first line) in bold white text with dark gradient background
+    - Page name watermark bottom right
+    Returns processed image bytes (falls back to original if Pillow fails).
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont, ImageFilter
+        import io
+        import textwrap
+
+        # Open image
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+        w, h = img.size
+
+        # Extract hook — first non-empty line, strip hashtags + emojis
+        lines = [l.strip() for l in post_text.split("\n") if l.strip()]
+        hook = lines[0] if lines else ""
+        import re
+        hook = re.sub(r"#\w+", "", hook).strip()
+        hook = re.sub(r"[^\x00-\x7F]+", " ", hook).strip()  # remove non-ASCII (emojis)
+        if len(hook) > 70:
+            hook = hook[:67] + "..."
+
+        # ── Dark gradient overlay at bottom ──
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw_overlay = ImageDraw.Draw(overlay)
+        gradient_height = int(h * 0.45)
+        for i in range(gradient_height):
+            alpha = int(210 * (i / gradient_height))
+            y = h - gradient_height + i
+            draw_overlay.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
+        img = Image.alpha_composite(img, overlay)
+
+        draw = ImageDraw.Draw(img)
+
+        # ── Try to load a bold font, fallback to default ──
+        font_size_hook = max(36, w // 22)
+        font_size_watermark = max(18, w // 55)
+        try:
+            font_hook = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size_hook)
+            font_wm   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size_watermark)
+        except Exception:
+            font_hook = ImageFont.load_default()
+            font_wm   = ImageFont.load_default()
+
+        # ── Wrap hook text ──
+        max_chars = max(20, w // (font_size_hook // 2))
+        wrapped = textwrap.fill(hook, width=max_chars)
+        wrapped_lines = wrapped.split("\n")
+
+        # ── Draw hook text with shadow ──
+        line_h = font_size_hook + 10
+        total_text_h = len(wrapped_lines) * line_h
+        text_y = h - total_text_h - int(h * 0.07)
+
+        for line in wrapped_lines:
+            bbox = draw.textbbox((0, 0), line, font=font_hook)
+            text_w = bbox[2] - bbox[0]
+            x = (w - text_w) // 2
+            # Shadow
+            draw.text((x + 3, text_y + 3), line, font=font_hook, fill=(0, 0, 0, 180))
+            # Main text
+            draw.text((x, text_y), line, font=font_hook, fill=(255, 255, 255, 255))
+            text_y += line_h
+
+        # ── Watermark — page name bottom right ──
+        wm_bbox = draw.textbbox((0, 0), page_name, font=font_wm)
+        wm_w = wm_bbox[2] - wm_bbox[0]
+        draw.text(
+            (w - wm_w - 20, h - font_size_watermark - 15),
+            page_name,
+            font=font_wm,
+            fill=(255, 255, 255, 160)
+        )
+
+        # ── Convert back to JPEG bytes ──
+        result = img.convert("RGB")
+        buf = io.BytesIO()
+        result.save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+
+    except Exception as e:
+        print(f"  Text overlay failed: {e} — using raw image")
+        return img_bytes
+
+
+def generate_and_download_image(niche: str, post_text: str, api_key: str, page_name: str = "AI with Abdullah") -> bytes | None:
+    """
+    1. Generate smart prompt via Groq
+    2. Fetch image bytes from Pollinations.ai (Flux model)
+    3. Add hook text + watermark overlay via Pillow
+    Returns processed image bytes or None on failure.
     """
     import urllib.parse
-    prompt = build_image_prompt(niche, post_text)
+    prompt = generate_image_prompt_via_groq(niche, post_text, api_key)
     encoded = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&enhance=true&seed={random.randint(1,99999)}"
-    return url
+    seed = random.randint(1, 999999)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&enhance=true&model=flux&seed={seed}"
+    try:
+        r = requests.get(url, timeout=60)
+        if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+            raw = r.content
+            # Apply text overlay
+            processed = add_text_overlay(raw, post_text, page_name)
+            return processed
+    except Exception as e:
+        print(f"  Image download failed: {e}")
+    return None
 
-def post_image_to_facebook(page_id: str, page_token: str, image_url: str, caption: str) -> dict:
-    """Post image + caption to Facebook page using photo endpoint."""
+
+def post_image_to_facebook(page_id: str, page_token: str, image_bytes: bytes, caption: str) -> dict:
+    """
+    Upload image bytes directly to Facebook — most reliable method.
+    Uses multipart/form-data with 'source' field.
+    """
     url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
     try:
-        r = requests.post(url, data={
-            "url": image_url,
-            "caption": caption,
-            "access_token": page_token,
-        }, timeout=30)
+        r = requests.post(
+            url,
+            data={"caption": caption, "access_token": page_token},
+            files={"source": ("post_image.jpg", image_bytes, "image/jpeg")},
+            timeout=45
+        )
         data = r.json()
         if "id" in data or "post_id" in data:
             return {"success": True, "id": data.get("post_id", data.get("id"))}
-        return {"success": False, "error": data.get("error", {}).get("message", "Unknown error")}
+        return {"success": False, "error": data.get("error", {}).get("message", "Unknown FB error")}
     except Exception as e:
         return {"success": False, "error": str(e)}
