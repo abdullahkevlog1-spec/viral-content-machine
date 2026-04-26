@@ -2,3 +2,4 @@ streamlit
 requests
 APScheduler
 pytz
+Pillow
