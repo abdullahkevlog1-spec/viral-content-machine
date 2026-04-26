@@ -1,0 +1,64 @@
+name: Auto Post — AI with Abdullah
+
+on:
+  schedule:
+    # All times in UTC. Pakistan (PKT) = UTC+5
+    # 9:00 AM PKT  = 04:00 UTC
+    - cron: '0 4 * * *'
+    # 2:00 PM PKT  = 09:00 UTC
+    - cron: '0 9 * * *'
+    # 9:00 PM PKT  = 16:00 UTC
+    - cron: '0 16 * * *'
+
+  # Also allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: 'Which slot to post'
+        required: true
+        default: 'morning'
+        type: choice
+        options:
+          - morning
+          - afternoon
+          - evening
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Determine slot from cron time
+        id: slot
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "SLOT=${{ inputs.slot }}" >> $GITHUB_ENV
+          else
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" = "04" ]; then
+              echo "SLOT=morning" >> $GITHUB_ENV
+            elif [ "$HOUR" = "09" ]; then
+              echo "SLOT=afternoon" >> $GITHUB_ENV
+            else
+              echo "SLOT=evening" >> $GITHUB_ENV
+            fi
+          fi
+
+      - name: Run auto post
+        env:
+          GROQ_API_KEY:   ${{ secrets.GROQ_API_KEY }}
+          FB_PAGE_TOKEN:  ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID:     ${{ secrets.FB_PAGE_ID }}
+        run: python auto_post.py --slot $SLOT
