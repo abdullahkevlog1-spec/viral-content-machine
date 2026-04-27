@@ -328,21 +328,208 @@ def post_image_to_facebook(page_id: str, token: str, img_bytes: bytes, caption: 
 # ─────────────────────────────────────────────────────────────────────────────
 #  MAIN
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+#  TRENDING CONTENT SYSTEM
+# ─────────────────────────────────────────────────────────────────────────────
+
+PAKISTAN_NEWS_FEEDS = [
+    "https://www.dawn.com/feeds/home",
+    "https://geo.tv/rss/top-stories",
+    "https://arynews.tv/feed/",
+    "https://www.thenews.com.pk/rss/1/1",
+]
+
+TRENDING_TOPICS_FALLBACK = [
+    "AI technology Pakistan",
+    "Pakistan economy 2026",
+    "Social media trends Pakistan",
+    "Tech jobs Pakistan",
+    "Startup Pakistan",
+]
+
+
+def fetch_trending_topic() -> dict:
+    """
+    Fetch trending topic from Pakistan news RSS feeds.
+    Returns: {"title": str, "summary": str, "source": str}
+    Falls back to Google Trends if RSS fails.
+    """
+    # Try pytrends first — Google Trends Pakistan
+    try:
+        from pytrends.request import TrendReq
+        pt = TrendReq(hl="en-US", tz=300)  # PKT = UTC+5
+        pt.build_payload(kw_list=[""], geo="PK", timeframe="now 1-d")
+        trending = pt.trending_searches(pn="pakistan")
+        if trending is not None and len(trending) > 0:
+            topic = str(trending.iloc[random.randint(0, min(4, len(trending)-1))][0])
+            print(f"  🔥 Google Trend (PK): {topic}")
+            return {"title": topic, "summary": f"Trending in Pakistan: {topic}", "source": "Google Trends"}
+    except Exception as e:
+        print(f"  pytrends failed: {e}")
+
+    # Try RSS feeds
+    try:
+        import xml.etree.ElementTree as ET
+        feed_url = random.choice(PAKISTAN_NEWS_FEEDS)
+        r = requests.get(feed_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            root = ET.fromstring(r.content)
+            items = root.findall(".//item")
+            if items:
+                item = items[random.randint(0, min(4, len(items)-1))]
+                title   = item.findtext("title", "").strip()
+                summary = item.findtext("description", "").strip()
+                # Clean HTML tags
+                summary = re.sub(r"<[^>]+>", "", summary)[:300]
+                if title:
+                    print(f"  📰 RSS topic: {title[:60]}")
+                    return {"title": title, "summary": summary, "source": feed_url}
+    except Exception as e:
+        print(f"  RSS failed: {e}")
+
+    # Fallback
+    topic = random.choice(TRENDING_TOPICS_FALLBACK)
+    print(f"  📌 Fallback topic: {topic}")
+    return {"title": topic, "summary": topic, "source": "fallback"}
+
+
+def generate_trending_post(trend: dict, api_key: str) -> str | None:
+    """Generate a viral Facebook post about a trending topic using Groq."""
+    prompt = f"""You are a viral Pakistani Facebook content creator.
+
+A trending topic in Pakistan right now: "{trend['title']}"
+Context: {trend['summary'][:200]}
+
+Write a viral Facebook post about this trend. Rules:
+- Start with a SHOCKING or CURIOSITY hook related to this specific trend
+- 4 parts: Hook → Value → Punch → CTA
+- Mix of English and Roman Urdu (Hinglish style)
+- Tone: Bold, opinionated, makes people stop scrolling
+- 2-5 emojis naturally placed
+- End with 4-5 relevant hashtags including #Pakistan
+- Max 12 words per line
+- NO generic phrases like "believe in yourself", "work hard", "game changer"
+- Be SPECIFIC to this trend — mention real details
+
+Return ONLY the post. No preamble."""
+
+    for attempt in range(3):
+        try:
+            r = requests.post(
+                GROQ_API_URL,
+                json={
+                    "model": GROQ_MODEL,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": round(0.85 + attempt * 0.05, 2),
+                    "max_tokens": 600,
+                },
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                timeout=30,
+            )
+            if r.status_code == 200:
+                text = r.json()["choices"][0]["message"]["content"].strip()
+                if len(text) > 150 and not any(p in text.lower() for p in BANNED_PHRASES[:8]):
+                    return text
+                print(f"  Attempt {attempt+1}: quality check failed — retrying")
+        except Exception as e:
+            print(f"  Attempt {attempt+1} error: {e}")
+    return None
+
+
+def generate_trending_image_prompt(trend: dict, post_text: str, api_key: str) -> str:
+    """Use Groq to make a specific image prompt for the trending topic."""
+    clean_post = re.sub(r"#\w+", "", post_text)
+    clean_post = re.sub(r"[^\x00-\x7F]+", " ", clean_post).strip()[:200]
+
+    try:
+        r = requests.post(
+            GROQ_API_URL,
+            json={
+                "model": GROQ_MODEL,
+                "messages": [
+                    {"role": "system", "content": "You are an AI image prompt engineer. Write ONE ultra-specific image prompt. Max 80 words. No text in image. Return ONLY the prompt."},
+                    {"role": "user", "content": f"Trending topic: {trend['title']}\nPost: {clean_post}\n\nWrite a dramatic, cinematic, photorealistic image prompt for this topic. No text. No words in image:"},
+                ],
+                "temperature": 0.7,
+                "max_tokens": 120,
+            },
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            timeout=15,
+        )
+        if r.status_code == 200:
+            prompt = r.json()["choices"][0]["message"]["content"].strip()
+            if "no text" not in prompt.lower():
+                prompt += ", no text, no words, photorealistic, 8k"
+            return prompt
+    except Exception:
+        pass
+    return f"dramatic cinematic photo about {trend['title']}, Pakistan, photorealistic, no text, 8k"
+
+
+def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
+    """Full trending post pipeline — fetch trend → generate → image → post."""
+    print(f"\n{'='*50}")
+    print(f"  🔥 TRENDING AUTO POST")
+    print(f"  Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"{'='*50}")
+
+    # Step 1: Find trending topic
+    print("\n📡 Fetching trending topic from Pakistan...")
+    trend = fetch_trending_topic()
+    print(f"  Topic: {trend['title']}")
+
+    # Step 2: Generate post
+    print("\n📝 Generating viral post about trend...")
+    text = generate_trending_post(trend, groq_key)
+    if not text:
+        print("❌ Could not generate trending post")
+        sys.exit(1)
+    print(f"✅ Post generated ({len(text)} chars)")
+    print(f"\n--- PREVIEW ---\n{text[:250]}...\n---")
+
+    # Step 3: Generate image
+    print("\n🎨 Generating trend-specific image...")
+    img_prompt = generate_trending_image_prompt(trend, text, groq_key)
+    encoded    = urllib.parse.quote(img_prompt)
+    seed       = random.randint(1, 999999)
+    img_url    = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&enhance=true&model=flux&seed={seed}"
+    print(f"  Prompt: {img_prompt[:80]}...")
+
+    img_bytes = None
+    try:
+        r = requests.get(img_url, timeout=60)
+        if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+            img_bytes = add_text_overlay(r.content, text)
+            print(f"  ✅ Image ready: {len(img_bytes)//1024}KB")
+    except Exception as e:
+        print(f"  Image failed: {e}")
+
+    # Step 4: Post to Facebook
+    print("\n📤 Posting to Facebook...")
+    if img_bytes:
+        result = post_image_to_facebook(fb_page, fb_token, img_bytes, text)
+        if not result["success"]:
+            print(f"  Image post failed: {result['error']} — text only fallback")
+            result = post_text_to_facebook(fb_page, fb_token, text)
+    else:
+        result = post_text_to_facebook(fb_page, fb_token, text)
+
+    if result["success"]:
+        print(f"\n✅ TRENDING POST PUBLISHED! ID: {result['id']}")
+        print(f"   Topic: {trend['title']}")
+    else:
+        print(f"\n❌ FAILED: {result['error']}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--slot", required=True, choices=["morning", "afternoon", "evening"])
+    parser.add_argument("--slot", required=True, choices=["morning", "afternoon", "evening", "trending"])
     args = parser.parse_args()
 
-    slot     = SLOTS[args.slot]
     groq_key = os.environ.get("GROQ_API_KEY", "")
     fb_token = os.environ.get("FB_PAGE_TOKEN", "")
     fb_page  = os.environ.get("FB_PAGE_ID", "")
-
-    print(f"\n{'='*50}")
-    print(f"  Auto Post — {slot['label']}")
-    print(f"  Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    print(f"  Niche: {slot['niche']} | Lang: {slot['language']}")
-    print(f"{'='*50}")
 
     # Validate secrets
     if not groq_key:
@@ -351,6 +538,20 @@ def main():
     if not fb_token or not fb_page:
         print("❌ FB_PAGE_TOKEN or FB_PAGE_ID not set in GitHub Secrets")
         sys.exit(1)
+
+    # ── Trending slot — special flow ──
+    if args.slot == "trending":
+        run_trending_post(groq_key, fb_token, fb_page)
+        return
+
+    # ── Regular slots ──
+    slot = SLOTS[args.slot]
+
+    print(f"\n{'='*50}")
+    print(f"  Auto Post — {slot['label']}")
+    print(f"  Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"  Niche: {slot['niche']} | Lang: {slot['language']}")
+    print(f"{'='*50}")
 
     # Step 1: Generate post
     print("\n📝 Generating post...")
