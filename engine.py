@@ -771,20 +771,49 @@ def generate_and_download_image(niche: str, post_text: str, api_key: str, page_n
 
 def post_image_to_facebook(page_id: str, page_token: str, image_bytes: bytes, caption: str) -> dict:
     """
-    Upload image bytes directly to Facebook — most reliable method.
-    Uses multipart/form-data with 'source' field.
+    Two-step process — ensures post appears in feed/timeline, not just Photos album:
+    Step 1: Upload image as unpublished → get photo_id
+    Step 2: Create feed post with photo attached
     """
-    url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
     try:
-        r = requests.post(
-            url,
-            data={"caption": caption, "access_token": page_token},
+        # Step 1 — Upload unpublished photo
+        upload_r = requests.post(
+            f"https://graph.facebook.com/v19.0/{page_id}/photos",
+            data={"access_token": page_token, "published": "false"},
             files={"source": ("post_image.jpg", image_bytes, "image/jpeg")},
-            timeout=45
+            timeout=45,
         )
-        data = r.json()
-        if "id" in data or "post_id" in data:
-            return {"success": True, "id": data.get("post_id", data.get("id"))}
-        return {"success": False, "error": data.get("error", {}).get("message", "Unknown FB error")}
+        photo_id = upload_r.json().get("id")
+
+        if not photo_id:
+            print(f"  Photo upload failed: {upload_r.json()}")
+            return {"success": False, "error": "Photo upload failed"}
+
+        # Step 2 — Create feed post with photo
+        feed_r = requests.post(
+            f"https://graph.facebook.com/v19.0/{page_id}/feed",
+            data={
+                "message": caption,
+                "attached_media[0]": f'{{"media_fbid":"{photo_id}"}}',
+                "access_token": page_token,
+            },
+            timeout=30,
+        )
+        feed_data = feed_r.json()
+        if "id" in feed_data:
+            return {"success": True, "id": feed_data["id"]}
+
+        # Fallback — direct photo publish
+        pub_r = requests.post(
+            f"https://graph.facebook.com/v19.0/{page_id}/photos",
+            data={"access_token": page_token, "published": "true", "caption": caption},
+            files={"source": ("post_image.jpg", image_bytes, "image/jpeg")},
+            timeout=45,
+        )
+        pub_data = pub_r.json()
+        if "id" in pub_data or "post_id" in pub_data:
+            return {"success": True, "id": pub_data.get("post_id", pub_data.get("id"))}
+        return {"success": False, "error": pub_data.get("error", {}).get("message", "Unknown FB error")}
+
     except Exception as e:
         return {"success": False, "error": str(e)}
