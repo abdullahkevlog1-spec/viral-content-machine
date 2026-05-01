@@ -24,6 +24,30 @@ import urllib.parse
 import re
 from datetime import datetime
 
+FB_GRAPH_VERSION = os.environ.get("FB_GRAPH_VERSION", "v24.0").strip() or "v24.0"
+if not FB_GRAPH_VERSION.startswith("v"):
+    FB_GRAPH_VERSION = f"v{FB_GRAPH_VERSION}"
+FB_GRAPH_BASE = f"https://graph.facebook.com/{FB_GRAPH_VERSION}"
+
+
+def fb_url(page_id: str, edge: str) -> str:
+    return f"{FB_GRAPH_BASE}/{page_id}/{edge}"
+
+
+def fb_error(data: dict) -> str:
+    err = data.get("error") if isinstance(data, dict) else None
+    if not err:
+        return str(data)[:500]
+
+    parts = [err.get("message", "Unknown Facebook error")]
+    if err.get("code") is not None:
+        parts.append(f"code={err.get('code')}")
+    if err.get("error_subcode") is not None:
+        parts.append(f"subcode={err.get('error_subcode')}")
+    if err.get("fbtrace_id"):
+        parts.append(f"fbtrace_id={err.get('fbtrace_id')}")
+    return " | ".join(parts)
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  CONFIG — 3 daily slots
 # ─────────────────────────────────────────────────────────────────────────────
@@ -297,14 +321,14 @@ def download_image(niche: str, post_text: str, api_key: str) -> bytes | None:
 def post_text_to_facebook(page_id: str, token: str, text: str) -> dict:
     try:
         r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/feed",
+            fb_url(page_id, "feed"),
             data={"message": text, "access_token": token},
             timeout=15,
         )
         data = r.json()
         if "id" in data:
             return {"success": True, "id": data["id"]}
-        return {"success": False, "error": data.get("error", {}).get("message", "Unknown")}
+        return {"success": False, "error": fb_error(data)}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -319,7 +343,7 @@ def post_image_to_facebook(page_id: str, token: str, img_bytes: bytes, caption: 
     try:
         # Step 1 — Upload photo without publishing
         upload_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/photos",
+            fb_url(page_id, "photos"),
             data={"access_token": token, "published": "false"},
             files={"source": ("post.jpg", img_bytes, "image/jpeg")},
             timeout=45,
@@ -336,10 +360,11 @@ def post_image_to_facebook(page_id: str, token: str, img_bytes: bytes, caption: 
 
         # Step 2 — Create feed post with photo attached
         feed_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/feed",
+            fb_url(page_id, "feed"),
             data={
                 "message": caption,
-                "attached_media[0]": f'{{"media_fbid":"{photo_id}"}}',
+                "published": "true",
+                "attached_media[0]": json.dumps({"media_fbid": photo_id}),
                 "access_token": token,
             },
             timeout=30,
@@ -347,21 +372,18 @@ def post_image_to_facebook(page_id: str, token: str, img_bytes: bytes, caption: 
         feed_data = feed_r.json()
 
         if "id" in feed_data:
+            print(f"  Feed post created: {feed_data['id']}")
             return {"success": True, "id": feed_data["id"]}
         
-        # Fallback: try publishing the photo directly with caption
-        print(f"  Feed attach failed: {feed_data} — trying direct photo publish")
-        pub_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            data={"access_token": token, "published": "true", "caption": caption},
-            files={"source": ("post.jpg", img_bytes, "image/jpeg")},
-            timeout=45,
-        )
-        pub_data = pub_r.json()
-        if "id" in pub_data or "post_id" in pub_data:
-            return {"success": True, "id": pub_data.get("post_id", pub_data.get("id"))}
-
-        return {"success": False, "error": pub_data.get("error", {}).get("message", "Unknown")}
+        # Do not publish directly to /photos here. That creates a Photos-album
+        # item, which is the exact "shows only in Photos" problem.
+        error = fb_error(feed_data)
+        print(f"  Feed attach failed: {error}")
+        return {
+            "success": False,
+            "error": f"Photo uploaded but Page feed post failed: {error}",
+            "photo_id": photo_id,
+        }
 
     except Exception as e:
         return {"success": False, "error": str(e)}

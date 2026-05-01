@@ -5,6 +5,32 @@
 
 import requests
 import random
+import os
+import json
+
+FB_GRAPH_VERSION = os.environ.get("FB_GRAPH_VERSION", "v24.0").strip() or "v24.0"
+if not FB_GRAPH_VERSION.startswith("v"):
+    FB_GRAPH_VERSION = f"v{FB_GRAPH_VERSION}"
+FB_GRAPH_BASE = f"https://graph.facebook.com/{FB_GRAPH_VERSION}"
+
+
+def fb_url(page_id: str, edge: str) -> str:
+    return f"{FB_GRAPH_BASE}/{page_id}/{edge}"
+
+
+def fb_error(data: dict) -> str:
+    err = data.get("error") if isinstance(data, dict) else None
+    if not err:
+        return str(data)[:500]
+
+    parts = [err.get("message", "Unknown Facebook error")]
+    if err.get("code") is not None:
+        parts.append(f"code={err.get('code')}")
+    if err.get("error_subcode") is not None:
+        parts.append(f"subcode={err.get('error_subcode')}")
+    if err.get("fbtrace_id"):
+        parts.append(f"fbtrace_id={err.get('fbtrace_id')}")
+    return " | ".join(parts)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HOOK STYLES LIBRARY  (12 psychology-backed hooks)
@@ -769,51 +795,86 @@ def generate_and_download_image(niche: str, post_text: str, api_key: str, page_n
     return None
 
 
-def post_image_to_facebook(page_id: str, page_token: str, image_bytes: bytes, caption: str) -> dict:
+def generate_image_url(niche: str, post_text: str, api_key: str | None = None) -> str:
+    """Return a public Pollinations image URL for Streamlit preview/posting."""
+    import urllib.parse
+    import re
+
+    clean_text = re.sub(r"#\w+", "", post_text)
+    clean_text = re.sub(r"[^\x00-\x7F]+", "", clean_text).strip()[:220]
+    base_style = NICHE_BASE_STYLES.get(niche, "cinematic dramatic professional photography, 8k")
+
+    if api_key:
+        prompt = generate_image_prompt_via_groq(niche, post_text, api_key)
+    else:
+        prompt = f"{base_style}, inspired by: {clean_text}, no text, no words, photorealistic, 8k"
+
+    encoded = urllib.parse.quote(prompt)
+    seed = random.randint(1, 999999)
+    return f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&enhance=true&model=flux&seed={seed}"
+
+
+def image_input_to_bytes(image_input: bytes | str, caption: str) -> bytes:
+    if isinstance(image_input, (bytes, bytearray)):
+        return bytes(image_input)
+    if isinstance(image_input, str):
+        r = requests.get(image_input, timeout=60)
+        r.raise_for_status()
+        content_type = r.headers.get("content-type", "")
+        if not content_type.startswith("image"):
+            raise ValueError(f"Image URL did not return an image: {content_type}")
+        return add_text_overlay(r.content, caption)
+    raise TypeError("image_input must be bytes or a public image URL")
+
+
+def post_image_to_facebook(page_id: str, page_token: str, image_bytes: bytes | str, caption: str) -> dict:
     """
     Two-step process — ensures post appears in feed/timeline, not just Photos album:
     Step 1: Upload image as unpublished → get photo_id
     Step 2: Create feed post with photo attached
     """
     try:
+        image_bytes = image_input_to_bytes(image_bytes, caption)
+
         # Step 1 — Upload unpublished photo
         upload_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/photos",
+            fb_url(page_id, "photos"),
             data={"access_token": page_token, "published": "false"},
             files={"source": ("post_image.jpg", image_bytes, "image/jpeg")},
             timeout=45,
         )
-        photo_id = upload_r.json().get("id")
+        upload_data = upload_r.json()
+        photo_id = upload_data.get("id")
 
         if not photo_id:
-            print(f"  Photo upload failed: {upload_r.json()}")
-            return {"success": False, "error": "Photo upload failed"}
+            print(f"  Photo upload failed: {fb_error(upload_data)}")
+            return {"success": False, "error": fb_error(upload_data)}
 
         # Step 2 — Create feed post with photo
         feed_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/feed",
+            fb_url(page_id, "feed"),
             data={
                 "message": caption,
-                "attached_media[0]": f'{{"media_fbid":"{photo_id}"}}',
+                "published": "true",
+                "attached_media[0]": json.dumps({"media_fbid": photo_id}),
                 "access_token": page_token,
             },
             timeout=30,
         )
         feed_data = feed_r.json()
         if "id" in feed_data:
+            print(f"  Feed post created: {feed_data['id']}")
             return {"success": True, "id": feed_data["id"]}
 
-        # Fallback — direct photo publish
-        pub_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            data={"access_token": page_token, "published": "true", "caption": caption},
-            files={"source": ("post_image.jpg", image_bytes, "image/jpeg")},
-            timeout=45,
-        )
-        pub_data = pub_r.json()
-        if "id" in pub_data or "post_id" in pub_data:
-            return {"success": True, "id": pub_data.get("post_id", pub_data.get("id"))}
-        return {"success": False, "error": pub_data.get("error", {}).get("message", "Unknown FB error")}
+        # Do not publish directly to /photos here. That creates a Photos-album
+        # item, which is the exact "shows only in Photos" problem.
+        error = fb_error(feed_data)
+        print(f"  Feed attach failed: {error}")
+        return {
+            "success": False,
+            "error": f"Photo uploaded but Page feed post failed: {error}",
+            "photo_id": photo_id,
+        }
 
     except Exception as e:
         return {"success": False, "error": str(e)}
