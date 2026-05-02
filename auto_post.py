@@ -104,34 +104,69 @@ def build_prompt(slot: dict) -> str:
     lang_ins = LANGUAGE_INSTRUCTIONS.get(slot["language"], LANGUAGE_INSTRUCTIONS["English"])
     hashtags = NICHE_HASHTAGS.get(slot["niche"], "#AI #Tech #Pakistan")
     banned   = ", ".join(f'"{p}"' for p in BANNED_PHRASES[:12])
+    tone     = slot["tone"]
+    niche    = slot["niche"]
+    variation = slot["variation"]
 
-    return f"""You are an elite viral Facebook content strategist.
+    # Vary post length based on slot
+    length_guide = {
+        "Emotional":         "Medium-long (200-280 words). Tell a mini-story. Make it personal and deep.",
+        "Educational":       "Long and detailed (250-320 words). Teach step by step. Give real examples.",
+        "Bold/Controversial": "Short and punchy (120-180 words). Every word must hit hard. No fluff.",
+    }.get(variation, "Medium (180-250 words).")
 
-LANGUAGE — CRITICAL:
+    niche_context = {
+        "AI & Tech": "Reference REAL AI tools (ChatGPT, Gemini, Midjourney, Copilot, Claude, Sora). Give specific use cases. Share surprising facts about AI that people don't know.",
+        "Motivation": "Share a SPECIFIC life struggle or mindset shift. Reference real scenarios: job loss, rejection, staying up at 2am, feeling behind in life. Be raw and honest.",
+        "ASMR / Satisfying": "Describe SPECIFIC sensory experiences: the sound of rain on glass, kinetic sand, soap cutting, slime stretching. Make the reader feel it physically.",
+    }.get(niche, "Be specific, real, and detailed.")
+
+    return f"""You are Pakistan's top viral Facebook content writer with 500K+ page followers.
+Your secret: you write like a real human, not a bot. Every post feels personal and specific.
+
+LANGUAGE:
 {lang_ins}
 
-PARAMETERS:
-- Niche: {slot['niche']}
-- Hook Style: {hook['name']} — {hook['psychology']}
-- Variation: {slot['variation']}
-- Tone Level: {slot['tone']}/10 (1=safe, 10=aggressive/provocative)
+NICHE: {niche}
+NICHE GUIDE: {niche_context}
 
-POST STRUCTURE — 4 parts, blank line between each:
+HOOK TYPE: {hook['name']}
+HOOK PSYCHOLOGY: {hook['psychology']}
+VARIATION: {variation}
+TONE: {tone}/10 {"(aggressive, bold, debate-starting)" if tone >= 7 else "(warm, relatable, honest)" if tone <= 4 else "(confident, direct, clear)"}
 
-[HOOK] — One scroll-stopping line using {hook['name']} psychology
-[VALUE] — 2-3 short lines with real insight. One idea per line.
-[PUNCH] — 1-2 lines hitting from a fresh angle
-[CTA] — One natural call to action. End with: {hashtags}
+LENGTH: {length_guide}
 
-RULES:
-1. Return ONLY the post text. No labels. No preamble.
-2. Max 12 words per line. Short = mobile-friendly.
-3. 2-5 emojis used naturally.
-4. BANNED (instant fail): {banned}
-5. Do NOT start with "In today's", "The truth is", "Most people".
-6. Be SPECIFIC. Generic = fail. Rewrite until it feels fresh.
+POST STRUCTURE:
 
-Write now. Start with the hook:"""
+PART 1 — HOOK (1-2 lines)
+Must stop the scroll instantly. Use {hook['name']} psychology.
+Be specific. NOT vague. Name real things, real feelings, real situations.
+
+PART 2 — BODY (3-6 lines depending on length)
+Go DEEP. Don't just state — explain, expand, give examples.
+Each line = one clear idea. Build emotional momentum.
+Reference specific details: tools, numbers, situations, feelings.
+
+PART 3 — PUNCH (1-2 lines)
+Land the unexpected angle. Say what others won't say.
+This is the line people screenshot and share.
+
+PART 4 — CTA (2-3 lines)
+Natural, conversational — NOT salesy.
+Ask a question OR give a direct instruction.
+End with: {hashtags}
+
+ABSOLUTE RULES:
+1. Return ONLY the post. No labels. No "Here is your post:".
+2. BANNED WORDS — instant reject: {banned}
+3. NO generic opener: "In today's world", "The truth is", "Most people don't know"
+4. Every line must be SPECIFIC. Vague = fail. Generic = fail.
+5. Write like you're texting a close friend who needs to hear this.
+6. Minimum 3 blank lines between sections for readability.
+7. 3-6 emojis placed naturally — not forced.
+
+Start directly with the hook now:"""
 
 
 def is_generic(text: str) -> bool:
@@ -182,9 +217,9 @@ def generate_post(slot: dict, api_key: str, max_retries: int = 4) -> str | None:
 #  IMAGE GENERATION
 # ─────────────────────────────────────────────────────────────────────────────
 NICHE_BASE_STYLES = {
-    "AI & Tech":         "dark dramatic tech aesthetic, glowing neon blue and purple circuits, cinematic 8k",
-    "Motivation":        "epic cinematic landscape, lone figure on mountain peak at golden hour, dramatic god rays",
-    "ASMR / Satisfying": "extreme macro close-up satisfying texture, pastel rainbow colors, perfect symmetry, 8k",
+    "AI & Tech":         "cinematic close-up of glowing holographic AI brain, deep space background, neon blue purple light rays, ultra detailed 8k, dramatic shadows, no text",
+    "Motivation":        "cinematic portrait of determined person standing at cliff edge at sunset, golden hour god rays, silhouette against burning sky, ultra realistic 8k, no text",
+    "ASMR / Satisfying": "extreme macro close-up of iridescent liquid mercury droplets on black surface, rainbow caustics, studio lighting, ultra sharp 8k, perfectly symmetrical, no text",
 }
 
 
@@ -278,7 +313,7 @@ def download_image(niche: str, post_text: str, api_key: str) -> bytes | None:
     prompt  = generate_image_prompt(niche, post_text, api_key)
     encoded = urllib.parse.quote(prompt)
     seed    = random.randint(1, 999999)
-    url     = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&enhance=true&model=flux&seed={seed}"
+    url     = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true&model=flux&seed={seed}"
     print(f"  Image prompt: {prompt[:80]}...")
     try:
         r = requests.get(url, timeout=60)
@@ -534,7 +569,7 @@ def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
     img_prompt = generate_trending_image_prompt(trend, text, groq_key)
     encoded    = urllib.parse.quote(img_prompt)
     seed       = random.randint(1, 999999)
-    img_url    = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&enhance=true&model=flux&seed={seed}"
+    img_url    = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true&model=flux&seed={seed}"
     print(f"  Prompt: {img_prompt[:80]}...")
 
     img_bytes = None
