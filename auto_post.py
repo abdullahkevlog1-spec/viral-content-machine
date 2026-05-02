@@ -346,60 +346,49 @@ def post_text_to_facebook(page_id: str, token: str, text: str) -> dict:
 
 def post_image_to_facebook(page_id: str, token: str, img_bytes: bytes, caption: str) -> dict:
     """
-    Two-step process:
-    Step 1: Upload image as unpublished photo → get photo_id
-    Step 2: Create feed post with photo attached → appears in timeline/feed
-    This ensures post shows in followers' feeds, not just Photos album.
+    Two-step: upload photo unpublished → attach to feed post.
+    Feed post appears in timeline and followers' feeds.
     """
     try:
-        # Step 1 — Upload photo without publishing
+        # Step 1 — Upload photo unpublished
         upload_r = requests.post(
             f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            data={"access_token": token, "published": "false"},
+            params={"access_token": token},
+            data={"published": "false"},
             files={"source": ("post.jpg", img_bytes, "image/jpeg")},
             timeout=45,
         )
         upload_data = upload_r.json()
         photo_id = upload_data.get("id")
+        print(f"  Photo upload response: {upload_data}")
 
         if not photo_id:
-            # Fallback: post as text if photo upload fails
-            print(f"  Photo upload failed: {upload_data} — falling back to text")
+            print("  Photo upload failed — posting text only")
             return post_text_to_facebook(page_id, token, caption)
 
-        print(f"  Photo uploaded: {photo_id}")
-
-        # Step 2 — Create feed post with photo attached
+        # Step 2 — Attach to feed post using JSON body
         feed_r = requests.post(
             f"https://graph.facebook.com/v19.0/{page_id}/feed",
-            data={
+            params={"access_token": token},
+            json={
                 "message": caption,
-                "attached_media[0]": f'{{"media_fbid":"{photo_id}"}}',
-                "access_token": token,
+                "attached_media": [{"media_fbid": photo_id}]
             },
             timeout=30,
         )
         feed_data = feed_r.json()
+        print(f"  Feed post response: {feed_data}")
 
         if "id" in feed_data:
             return {"success": True, "id": feed_data["id"]}
-        
-        # Fallback: try publishing the photo directly with caption
-        print(f"  Feed attach failed: {feed_data} — trying direct photo publish")
-        pub_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            data={"access_token": token, "published": "true", "caption": caption},
-            files={"source": ("post.jpg", img_bytes, "image/jpeg")},
-            timeout=45,
-        )
-        pub_data = pub_r.json()
-        if "id" in pub_data or "post_id" in pub_data:
-            return {"success": True, "id": pub_data.get("post_id", pub_data.get("id"))}
 
-        return {"success": False, "error": pub_data.get("error", {}).get("message", "Unknown")}
+        # Last fallback — text only (always shows in feed)
+        print("  Feed attach failed — text only fallback")
+        return post_text_to_facebook(page_id, token, caption)
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        print(f"  Exception: {e}")
+        return post_text_to_facebook(page_id, token, caption)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
