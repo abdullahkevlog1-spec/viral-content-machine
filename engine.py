@@ -341,124 +341,66 @@ def build_prompt(niche: str, hook_style: dict, variation: str, tone_level: int, 
     hashtags_sample = " ".join(random.sample(profile["hashtag_pool"], min(5, len(profile["hashtag_pool"]))))
     lang = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["English"])
 
-    prompt = f"""You are an elite viral Facebook content strategist with 10 years of growth experience.
-Your posts consistently get 10x more engagement than average.
+    length_guide = {
+        "Emotional":          "Medium-long (200-280 words). Tell a mini-story. Make it personal and deep.",
+        "Educational":        "Long and detailed (250-320 words). Teach step by step. Give real examples.",
+        "Bold/Controversial": "Short and punchy (120-180 words). Every word must hit hard. No fluff.",
+    }.get(variation, "Medium (180-250 words).")
 
-═══ MISSION ═══
-Write a Facebook post that stops the scroll, triggers emotion, and drives comments/shares.
+    niche_context = {
+        "AI & Tech":   "Reference REAL AI tools (ChatGPT, Gemini, Midjourney, Claude, Sora, Copilot). Give surprising facts. Show specific use cases people can try TODAY.",
+        "Motivation":  "Reference specific real struggles: job rejection, 2am overthinking, feeling behind peers, impostor syndrome. Be raw. Not preachy.",
+        "ASMR / Satisfying": "Describe specific sensory details: kinetic sand sound, soap cutting, slime stretching, rain on glass, bubble wrap popping. Make reader feel it.",
+        "Business":    "Give specific tactics with numbers: '3 clients in 2 weeks', 'Rs.50k with one skill'. Reference real Pakistani market situations.",
+    }.get(niche, "Be hyper-specific, real, and detailed. Reference real things people recognize.")
 
-═══ LANGUAGE — CRITICAL ═══
+    prompt = f"""You are Pakistan's top viral Facebook content writer. 500K+ page followers trust your voice.
+Your secret: you write like a real human — personal, specific, never preachy.
+
+LANGUAGE — NON-NEGOTIABLE:
 {lang['instruction']}
-This is non-negotiable. Wrong language = failed output.
 
-═══ PARAMETERS ═══
 NICHE: {niche}
-TARGET AUDIENCE: {profile['audience']}
-CONTENT TONE STYLE: {profile['tone_descriptor']}
-AGGRESSION LEVEL: {tone_descriptor(tone_level)} (level {tone_level}/10)
-HOOK STYLE: {hook_style['name']}
-  Psychology: {hook_style['psychology']}
-  Example hooks (inspire, do NOT copy exactly):
+NICHE CONTEXT: {niche_context}
+HOOK: {hook_style['name']} — {hook_style['psychology']}
+Example hooks (inspire only, do NOT copy):
 {hook_examples}
-VARIATION TYPE: {variation}
-  Instruction: {VARIATION_INSTRUCTIONS[variation]}
+VARIATION: {variation} — {VARIATION_INSTRUCTIONS[variation]}
+TONE: {tone_level}/10 — {tone_descriptor(tone_level)}
+LENGTH: {length_guide}
 
-═══ MANDATORY POST STRUCTURE ═══
-Write the post in this EXACT 4-part format, each section separated by a blank line:
+POST STRUCTURE — blank line between each part:
 
-[PART 1 — HOOK]
-One single, powerful scroll-stopping line. Use the {hook_style['id']} hook style.
-Short. Punchy. Makes the reader NEED to keep reading.
+[HOOK — 1-2 lines]
+Scroll-stopping. Specific. Uses {hook_style['name']} psychology.
+Name real things. Real feelings. Real situations.
 
-[PART 2 — VALUE]
-2-3 short lines delivering the core insight or benefit.
-One idea per line. Mobile-friendly. No waffle.
+[BODY — 3-6 lines]
+Go DEEP. Don't just state — explain and expand.
+Give real examples, specific details, numbers where possible.
+Build emotional momentum line by line.
 
-[PART 3 — SECOND PUNCH]
-1-2 lines that land a fresh angle or reinforce the message with new energy.
-Hit them again from a different direction.
+[PUNCH — 1-2 lines]
+The unexpected angle. Say what others won't.
+The line people screenshot and share.
 
-[PART 4 — CTA]
-One dynamic call to action. Make it feel natural, not salesy.
+[CTA — 2-3 lines]
+Conversational, not salesy. Ask a real question OR direct instruction.
 {lang['cta_note']}
-Drive comments, follows, or saves. Relevant to {niche}.
-Suggested hashtags to end with: {hashtags_sample}
+End with: {hashtags_sample}
 {lang['hashtag_note']}
 
-═══ HARD RULES ═══
-1. Return ONLY the post text. Zero labels. Zero "Here is your post:" preamble.
-2. Max 12 words per line. Short = readable on mobile.
-3. Use {profile['emojis']} emojis naturally — 2 to 5 total.
-4. End with 4-6 relevant hashtags on the final line only.
-5. BANNED PHRASES (instant reject): "stay motivated", "work hard", "believe in yourself",
-   "never give up", "you can do it", "success is a journey", "dream big", "be positive",
-   "in today's world", "game changer", "think outside the box", "the future is bright",
-   "most people don't realize", "it's no secret", "at the end of the day".
-6. Do NOT start with "In today's", "The truth is", "As we all know", "Most people".
-7. Be SPECIFIC. Give REAL insight. If someone can nod and move on — rewrite it.
-8. Make someone feel: "I've never heard it put exactly that way."
-9. Every line must earn its place. No filler. No waffle. No vague statements.
+RULES:
+1. Return ONLY the post. No labels. No preamble.
+2. BANNED: "stay motivated", "work hard", "believe in yourself", "never give up",
+   "you can do it", "dream big", "in today's world", "game changer", "think outside the box",
+   "most people don't realize", "it's no secret", "at the end of the day"
+3. Do NOT start with: "In today's", "The truth is", "As we all know", "Most people"
+4. Write like texting a close friend who needs to hear this RIGHT NOW
+5. 3-6 emojis placed naturally — not forced
+6. Every single line must earn its place
 
-Write the post now. Start directly with the hook:"""
-
-    return prompt
-    profile = NICHE_PROFILES[niche]
-    hook_examples = "\n".join([f'  • "{ex}"' for ex in hook_style["examples"]])
-    hashtags_sample = " ".join(random.sample(profile["hashtag_pool"], min(5, len(profile["hashtag_pool"]))))
-
-    prompt = f"""You are an elite viral Facebook content strategist with 10 years of growth experience.
-Your posts consistently get 10x more engagement than average.
-
-═══ MISSION ═══
-Write a Facebook post that stops the scroll, triggers emotion, and drives comments/shares.
-
-═══ PARAMETERS ═══
-NICHE: {niche}
-TARGET AUDIENCE: {profile['audience']}
-CONTENT TONE STYLE: {profile['tone_descriptor']}
-AGGRESSION LEVEL: {tone_descriptor(tone_level)} (level {tone_level}/10)
-HOOK STYLE: {hook_style['name']}
-  Psychology: {hook_style['psychology']}
-  Example hooks (inspire, do NOT copy exactly):
-{hook_examples}
-VARIATION TYPE: {variation}
-  Instruction: {VARIATION_INSTRUCTIONS[variation]}
-
-═══ MANDATORY POST STRUCTURE ═══
-Write the post in this EXACT 4-part format, each section separated by a blank line:
-
-[PART 1 — HOOK]
-One single, powerful scroll-stopping line. Use the {hook_style['id']} hook style.
-Short. Punchy. Makes the reader NEED to keep reading.
-
-[PART 2 — VALUE]
-2-3 short lines delivering the core insight or benefit.
-One idea per line. Mobile-friendly. No waffle.
-
-[PART 3 — SECOND PUNCH]
-1-2 lines that land a fresh angle or reinforce the message with new energy.
-Hit them again from a different direction.
-
-[PART 4 — CTA]
-One dynamic call to action. Make it feel natural, not salesy.
-Drive comments, follows, or saves. Relevant to {niche}.
-Suggested hashtags to end with: {hashtags_sample}
-
-═══ HARD RULES ═══
-1. Return ONLY the post text. Zero labels. Zero "Here is your post:" preamble.
-2. Max 12 words per line. Short = readable on mobile.
-3. Use {profile['emojis']} emojis naturally — 2 to 5 total.
-4. End with 4-6 relevant hashtags on the final line only.
-5. BANNED PHRASES (instant reject): "stay motivated", "work hard", "believe in yourself",
-   "never give up", "you can do it", "success is a journey", "dream big", "be positive",
-   "in today's world", "game changer", "think outside the box", "the future is bright",
-   "most people don't realize", "it's no secret", "at the end of the day".
-6. Do NOT start with "In today's", "The truth is", "As we all know", "Most people".
-7. Be SPECIFIC. Give REAL insight. If someone can nod and move on — rewrite it.
-8. Make someone feel: "I've never heard it put exactly that way."
-9. Every line must earn its place. No filler. No waffle. No vague statements.
-
-Write the post now. Start directly with the hook:"""
+Write now. Start with the hook:"""
 
     return prompt
 
@@ -594,14 +536,14 @@ def get_hook_by_name(name: str) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 NICHE_BASE_STYLES = {
-    "AI & Tech":          "dark dramatic tech aesthetic, glowing neon blue and purple circuits, cinematic lighting, 8k ultra sharp",
-    "Motivation":         "epic cinematic landscape, lone figure on mountain peak at golden hour, dramatic god rays, award-winning photo",
-    "Business & Finance": "luxury minimalist dark office, gold accents, dramatic side lighting, ultra professional editorial photo",
-    "ASMR / Satisfying":  "extreme macro close-up satisfying texture, pastel rainbow colors, perfect symmetry, studio lighting, 8k",
-    "Health & Wellness":  "serene misty forest at sunrise, zen stone garden, soft dreamy bokeh, National Geographic style",
-    "Relationships":      "candid warm moment, shallow depth of field, golden hour bokeh, film grain, emotional cinematic",
-    "Comedy & Memes":     "vibrant pop art explosion, bold graphic style, high contrast comic colors, dynamic composition",
-    "News & Trends":      "dramatic editorial photo, bold red and black, sharp contrast, photojournalism award-winning",
+    "AI & Tech":          "cinematic close-up glowing holographic AI brain, deep space neon blue purple light rays, ultra detailed 8k, dramatic shadows, no text",
+    "Motivation":         "cinematic portrait determined person cliff edge sunset, golden hour god rays, silhouette burning sky, ultra realistic 8k, no text",
+    "Business & Finance": "luxury dark office dramatic side lighting, gold coins scattered on glass table, editorial photo, ultra sharp 8k, no text",
+    "ASMR / Satisfying":  "extreme macro iridescent liquid mercury droplets black surface, rainbow caustics, studio lighting, ultra sharp 8k, perfectly symmetrical, no text",
+    "Health & Wellness":  "serene misty forest sunrise, lone figure meditating on rock, volumetric light rays, National Geographic style, no text",
+    "Relationships":      "candid emotional moment two people laughing, golden hour bokeh, shallow depth of field, film grain, cinematic, no text",
+    "Comedy & Memes":     "vibrant pop art explosion bold colors, dynamic composition, high energy, comic style, no text",
+    "News & Trends":      "dramatic cinematic photojournalism, bold lighting, high contrast, award winning press photo, no text",
 }
 
 def generate_image_prompt_via_groq(niche: str, post_text: str, api_key: str) -> str:
@@ -756,7 +698,7 @@ def generate_and_download_image(niche: str, post_text: str, api_key: str, page_n
     prompt = generate_image_prompt_via_groq(niche, post_text, api_key)
     encoded = urllib.parse.quote(prompt)
     seed = random.randint(1, 999999)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&enhance=true&model=flux&seed={seed}"
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true&model=flux&seed={seed}"
     try:
         r = requests.get(url, timeout=60)
         if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
