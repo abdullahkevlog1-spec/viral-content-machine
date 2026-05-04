@@ -1180,128 +1180,155 @@ with tab5:
 # ═════════════════════════════════════════════════════════════════════════════
 #  TAB 6 — SELF IMPROVE
 # ═════════════════════════════════════════════════════════════════════════════
+#  TAB 6 — SELF IMPROVE (reads from GitHub — zero secrets needed)
+# ═════════════════════════════════════════════════════════════════════════════
 with tab6:
-    import self_improve
+
+    GITHUB_RAW  = "https://raw.githubusercontent.com/abdullahkevlog1-spec/viral-content-machine/main"
+    GH_API_BASE = "https://api.github.com/repos/abdullahkevlog1-spec/viral-content-machine"
 
     st.markdown("#### 🧠 Self-Improvement Engine")
-    st.caption("System apne aap ko analyze karta hai — errors detect karta hai, Facebook engagement dekhta hai, aur AI improvements suggest karta hai.")
+    st.info("Raat 11 PM ko GitHub Actions khud analysis karta hai — report GitHub mein save hoti hai. Yahan sirf dekhna hai aur approve karna hai. Koi secret nahi chahiye.")
 
-    # Load existing report
-    report = self_improve.load_report()
+    # ── Load report from GitHub raw URL (no auth needed — public repo) ──
+    def load_github_report() -> dict | None:
+        try:
+            r = requests.get(f"{GITHUB_RAW}/data/report.json", timeout=10)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+        return None
 
-    col_gen, col_info = st.columns([2, 1])
-    with col_gen:
-        gen_btn = st.button("🔄 Analyze & Generate New Report", type="primary", use_container_width=True)
-    with col_info:
-        if report:
-            st.caption(f"Last report: {report.get('generated_at', 'Unknown')}")
+    def mark_approved_github(suggestion_index: int, report: dict):
+        """Commit approved status to GitHub via API."""
+        try:
+            gh_pat = st.secrets.get("GH_PAT", "")
+        except Exception:
+            gh_pat = ""
 
-    if gen_btn:
-        _api = get_api_key(cfg)
-        _token = cfg.get("page_token", "")
-        _page  = cfg.get("page_id", "")
-        if not _api:
-            st.error("❌ Groq API key nahi hai — Settings mein add karo")
-        else:
-            with st.spinner("📊 Data collect ho raha hai... Facebook insights... AI analysis..."):
-                report = self_improve.generate_full_report(_page, _token, _api)
-            st.success("✅ Report ready!")
-            st.rerun()
+        if not gh_pat:
+            # No PAT — just update session state
+            if "approved" not in st.session_state:
+                st.session_state["approved"] = []
+            if suggestion_index not in st.session_state["approved"]:
+                st.session_state["approved"].append(suggestion_index)
+            return True
+
+        try:
+            import base64
+            implemented = report.get("implemented", [])
+            if suggestion_index not in implemented:
+                implemented.append(suggestion_index)
+            report["implemented"] = implemented
+
+            url = f"{GH_API_BASE}/contents/data/report.json"
+            headers = {"Authorization": f"token {gh_pat}",
+                       "Accept": "application/vnd.github.v3+json"}
+
+            r = requests.get(url, headers=headers, timeout=10)
+            sha = r.json().get("sha") if r.status_code == 200 else None
+
+            content = base64.b64encode(
+                json.dumps(report, indent=2).encode()
+            ).decode()
+            data = {"message": f"approve: suggestion {suggestion_index}",
+                    "content": content, "branch": "main"}
+            if sha:
+                data["sha"] = sha
+
+            requests.put(url, json=data, headers=headers, timeout=15)
+            return True
+        except Exception as e:
+            st.warning(f"GitHub commit failed: {e}")
+            return False
+
+    # Refresh button
+    col_r, col_i = st.columns([2, 1])
+    with col_r:
+        refresh = st.button("🔄 Refresh Report", use_container_width=True)
+    with col_i:
+        st.caption("Auto-updates raat 11 PM ko")
+
+    if refresh or "si_report" not in st.session_state:
+        with st.spinner("GitHub se report load ho rahi hai..."):
+            st.session_state["si_report"] = load_github_report()
+
+    report = st.session_state.get("si_report")
 
     if report:
+        st.success(f"✅ Report: {report.get('generated_at', 'Unknown')}")
         st.markdown("---")
 
-        # Stats row
-        sched = report.get("schedule", {})
-        hist  = report.get("history", {})
+        # Stats
+        log_a = report.get("log_analysis", {})
         fb    = report.get("facebook", {})
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.markdown(f'<div class="stat-card"><div class="stat-number">{sched.get("success_rate", 0)}%</div><div class="stat-label">Post Success</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-card"><div class="stat-number">{log_a.get("success_rate", 0)}%</div><div class="stat-label">Post Success</div></div>', unsafe_allow_html=True)
         with c2:
-            st.markdown(f'<div class="stat-card"><div class="stat-number">{hist.get("total_posts", 0)}</div><div class="stat-label">Total Posts</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-card"><div class="stat-number">{log_a.get("total", 0)}</div><div class="stat-label">Total Logged</div></div>', unsafe_allow_html=True)
         with c3:
-            st.markdown(f'<div class="stat-card"><div class="stat-number">{fb.get("avg_engagement", "N/A")}</div><div class="stat-label">Avg Engagement</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-card"><div class="stat-number">{fb.get("avg_engagement", 0)}</div><div class="stat-label">Avg Engagement</div></div>', unsafe_allow_html=True)
         with c4:
-            st.markdown(f'<div class="stat-card"><div class="stat-number">{fb.get("total_comments", 0)}</div><div class="stat-label">Comments</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="stat-card"><div class="stat-number">{fb.get("zero_engagement", 0)}</div><div class="stat-label">Zero Engage</div></div>', unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("#### 💡 AI Suggestions — 1 Click Implement")
+        st.markdown("#### 💡 AI Suggestions — Approve karo, system track kare ga")
 
-        suggestions = report.get("suggestions", [])
-        implemented = report.get("implemented", [])
+        suggestions  = report.get("suggestions", [])
+        implemented  = report.get("implemented", [])
+        session_appr = st.session_state.get("approved", [])
+        all_approved = list(set(implemented + session_appr))
 
-        if not suggestions:
-            st.info("Koi suggestions nahi — report generate karo.")
-        else:
-            priority_colors = {"HIGH": "#f97316", "MEDIUM": "#facc15", "LOW": "#4ade80"}
-            category_icons  = {
-                "content":    "✍️",
-                "technical":  "⚙️",
-                "schedule":   "⏰",
-                "engagement": "📈",
-                "design":     "🎨",
-            }
+        priority_colors = {"HIGH": "#f97316", "MEDIUM": "#facc15", "LOW": "#4ade80"}
+        category_icons  = {"content": "✍️", "technical": "⚙️",
+                           "schedule": "⏰", "engagement": "📈", "design": "🎨"}
 
-            for i, s in enumerate(suggestions):
-                is_done = i in implemented
-                priority = s.get("priority", "MEDIUM")
-                category = s.get("category", "content")
-                color    = priority_colors.get(priority, "#facc15")
-                icon     = category_icons.get(category, "💡")
+        for i, s in enumerate(suggestions):
+            is_done  = i in all_approved
+            priority = s.get("priority", "MEDIUM")
+            category = s.get("category", "content")
+            color    = priority_colors.get(priority, "#facc15")
+            icon     = category_icons.get(category, "💡")
+            bg       = "#0a1a0a" if is_done else "#10121f"
+            border   = "#166534" if is_done else "#1e2138"
 
-                bg = "#0a1a0a" if is_done else "#10121f"
-                border = "#166534" if is_done else "#1e2138"
-
-                st.markdown(f"""
-                <div style="background:{bg};border:1px solid {border};border-radius:12px;padding:1rem 1.2rem;margin-bottom:0.8rem;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <span style="color:{color};font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;">
-                            {icon} {category.upper()} · {priority}
-                        </span>
-                        {"<span style='color:#4ade80;font-size:0.75rem;'>✅ Implemented</span>" if is_done else ""}
-                    </div>
-                    <div style="color:#e2e0f0;font-size:0.9rem;font-weight:600;margin-bottom:4px;">
-                        🔍 {s.get('problem', '')}
-                    </div>
-                    <div style="color:#9490b0;font-size:0.84rem;margin-bottom:4px;">
-                        💡 {s.get('suggestion', '')}
-                    </div>
-                    <div style="color:#6b6b8a;font-size:0.8rem;font-style:italic;margin-bottom:4px;">
-                        📋 {s.get('action', '')}
-                    </div>
-                    <div style="color:#4ade80;font-size:0.78rem;">
-                        📈 Impact: {s.get('impact', '')}
-                    </div>
+            st.markdown(f"""
+            <div style="background:{bg};border:1px solid {border};border-radius:12px;padding:1rem 1.2rem;margin-bottom:0.8rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="color:{color};font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;">
+                        {icon} {category.upper()} · {priority}
+                    </span>
+                    {"<span style='color:#4ade80;font-size:0.75rem;'>✅ Approved</span>" if is_done else ""}
                 </div>
-                """, unsafe_allow_html=True)
+                <div style="color:#e2e0f0;font-size:0.9rem;font-weight:600;margin-bottom:4px;">🔍 {s.get('problem', '')}</div>
+                <div style="color:#9490b0;font-size:0.84rem;margin-bottom:4px;">💡 {s.get('suggestion', '')}</div>
+                <div style="color:#6b6b8a;font-size:0.8rem;font-style:italic;margin-bottom:4px;">📋 {s.get('action', '')}</div>
+                <div style="color:#4ade80;font-size:0.78rem;">📈 {s.get('impact', '')}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-                if not is_done:
-                    if st.button(f"✅ Mark as Implemented", key=f"impl_{i}", use_container_width=False):
-                        self_improve.mark_implemented(i)
-                        st.success("Marked! Implement karo aur agli report mein track hoga.")
-                        st.rerun()
+            if not is_done:
+                if st.button(f"✅ Approve #{i+1}", key=f"appr_{i}"):
+                    mark_approved_github(i, report)
+                    st.success("✅ Approved! Agli report mein track hoga.")
+                    st.rerun()
 
         st.markdown("---")
-        st.markdown("#### 📱 Facebook Performance (Last 10 Posts)")
-        posts = fb.get("posts", [])
-        if posts:
-            for p in posts:
-                eng = p.get("likes", 0) + p.get("comments", 0) + p.get("shares", 0)
-                st.markdown(
-                    f'<div class="history-item">'
-                    f'<div class="history-meta">📅 {p.get("time")} · '
-                    f'👍 {p.get("likes")} · 💬 {p.get("comments")} · 🔄 {p.get("shares")} · 🔥 Total: {eng}</div>'
-                    f'{p.get("preview", "")}...</div>',
-                    unsafe_allow_html=True
-                )
-        elif fb.get("error"):
-            st.warning(f"Facebook data nahi mili: {fb.get('error')}")
-        else:
-            st.caption("Koi posts nahi — pehle post karo.")
+        st.markdown("#### 📱 Facebook Last Posts")
+        best = fb.get("best_post")
+        worst = fb.get("worst_post")
+        if best:
+            st.markdown(f'<div class="history-item"><div class="history-meta">🏆 Best — 👍{best.get("likes")} 💬{best.get("comments")} 🔄{best.get("shares")}</div>{best.get("preview")}...</div>', unsafe_allow_html=True)
+        if worst:
+            st.markdown(f'<div class="history-item"><div class="history-meta">📉 Worst — 👍{worst.get("likes")} 💬{worst.get("comments")} 🔄{worst.get("shares")}</div>{worst.get("preview")}...</div>', unsafe_allow_html=True)
+
+        if fb.get("error"):
+            st.warning(f"FB data error: {fb.get('error')}")
 
     else:
         st.markdown("<br>", unsafe_allow_html=True)
-        st.info("Koi report nahi — upar 'Analyze & Generate' button dabao.")
-        st.caption("System automatically Facebook engagement, schedule errors, aur content patterns analyze karega aur improvement plan banayega.")
+        st.warning("Abhi koi report nahi hai — pehli report aaj raat 11 PM ko automatic generate hogi.")
+        st.caption("GitHub Actions raat 11 PM ko: post logs + FB insights + Groq analysis → report.json → GitHub commit → yahan dikh jaati hai")
