@@ -64,4 +64,6 @@ jobs:
           GROQ_API_KEY:  ${{ secrets.GROQ_API_KEY }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
+          GH_PAT:        ${{ secrets.GH_PAT }}
+          GITHUB_REPO:   abdullahkevlog1-spec/viral-content-machine
         run: python auto_post.py --slot $SLOT
