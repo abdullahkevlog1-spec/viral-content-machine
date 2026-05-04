@@ -23,6 +23,7 @@ import requests
 import urllib.parse
 import re
 from datetime import datetime
+from carousel import generate_carousel
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CONFIG — 3 daily slots
@@ -329,7 +330,49 @@ def download_image(niche: str, post_text: str, api_key: str) -> bytes | None:
 # ─────────────────────────────────────────────────────────────────────────────
 #  FACEBOOK POSTING
 # ─────────────────────────────────────────────────────────────────────────────
-def post_text_to_facebook(page_id: str, token: str, text: str) -> dict:
+def post_carousel_to_facebook(page_id: str, token: str,
+                              slides: list, caption: str) -> dict:
+    """
+    Post 3-slide carousel to Facebook feed.
+    Each slide uploaded as unpublished photo, then attached to one feed post.
+    """
+    try:
+        photo_ids = []
+        for i, img_bytes in enumerate(slides):
+            r = requests.post(
+                f"https://graph.facebook.com/v19.0/{page_id}/photos",
+                data={"access_token": token, "published": "false"},
+                files={"source": (f"slide_{i+1}.jpg", img_bytes, "image/jpeg")},
+                timeout=45,
+            )
+            pid = r.json().get("id")
+            if not pid:
+                print(f"  Slide {i+1} upload failed: {r.json()}")
+                continue
+            photo_ids.append(pid)
+            print(f"  Slide {i+1} uploaded: {pid}")
+
+        if not photo_ids:
+            return {"success": False, "error": "All slides failed to upload"}
+
+        # Attach all photos to one feed post
+        data = {"message": caption, "access_token": token}
+        for i, pid in enumerate(photo_ids):
+            data[f"attached_media[{i}]"] = f'{{"media_fbid":"{pid}"}}'
+
+        feed_r = requests.post(
+            f"https://graph.facebook.com/v19.0/{page_id}/feed",
+            data=data,
+            timeout=30,
+        )
+        feed_data = feed_r.json()
+        if "id" in feed_data:
+            return {"success": True, "id": feed_data["id"]}
+
+        return {"success": False, "error": feed_data.get("error", {}).get("message", "Unknown")}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
     try:
         r = requests.post(
             f"https://graph.facebook.com/v19.0/{page_id}/feed",
@@ -553,29 +596,21 @@ def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
     print(f"✅ Post generated ({len(text)} chars)")
     print(f"\n--- PREVIEW ---\n{text[:250]}...\n---")
 
-    # Step 3: Generate image
-    print("\n🎨 Generating trend-specific image...")
-    img_prompt = generate_trending_image_prompt(trend, text, groq_key)
-    encoded    = urllib.parse.quote(img_prompt)
-    seed       = random.randint(1, 999999)
-    img_url    = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true&model=flux&seed={seed}"
-    print(f"  Prompt: {img_prompt[:80]}...")
-
-    img_bytes = None
+    # Step 3: Generate carousel
+    print("\n🎨 Generating carousel slides...")
     try:
-        r = requests.get(img_url, timeout=60)
-        if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
-            img_bytes = add_text_overlay(r.content, text)
-            print(f"  ✅ Image ready: {len(img_bytes)//1024}KB")
+        slides = generate_carousel(text, "News & Trends")
+        print(f"  ✅ {len(slides)} slides ready")
     except Exception as e:
-        print(f"  Image failed: {e}")
+        print(f"  Carousel failed: {e}")
+        slides = []
 
     # Step 4: Post to Facebook
     print("\n📤 Posting to Facebook...")
-    if img_bytes:
-        result = post_image_to_facebook(fb_page, fb_token, img_bytes, text)
+    if slides:
+        result = post_carousel_to_facebook(fb_page, fb_token, slides, text)
         if not result["success"]:
-            print(f"  Image post failed: {result['error']} — text only fallback")
+            print(f"  Carousel failed: {result['error']} — text fallback")
             result = post_text_to_facebook(fb_page, fb_token, text)
     else:
         result = post_text_to_facebook(fb_page, fb_token, text)
@@ -628,20 +663,31 @@ def main():
     print(f"✅ Post generated ({len(text)} chars)")
     print(f"\n--- POST PREVIEW ---\n{text[:200]}...\n---")
 
-    # Step 2: Generate + download image
-    print("\n🎨 Generating image...")
-    img_bytes = download_image(slot["niche"], text, groq_key)
+    # Step 2: Generate carousel slides
+    print("\n🎨 Generating carousel slides...")
+    try:
+        slides = generate_carousel(text, slot["niche"])
+        print(f"  ✅ {len(slides)} slides generated")
+    except Exception as e:
+        print(f"  Carousel failed: {e} — will try single image fallback")
+        slides = []
 
     # Step 3: Post to Facebook
     print("\n📤 Posting to Facebook...")
-    if img_bytes:
-        result = post_image_to_facebook(fb_page, fb_token, img_bytes, text)
+    if slides:
+        result = post_carousel_to_facebook(fb_page, fb_token, slides, text)
         if not result["success"]:
-            print(f"  Image post failed: {result['error']} — falling back to text")
+            print(f"  Carousel post failed: {result['error']} — falling back to text")
             result = post_text_to_facebook(fb_page, fb_token, text)
     else:
-        print("  No image — posting text only")
-        result = post_text_to_facebook(fb_page, fb_token, text)
+        # Single image fallback
+        img_bytes = download_image(slot["niche"], text, groq_key)
+        if img_bytes:
+            result = post_image_to_facebook(fb_page, fb_token, img_bytes, text)
+            if not result["success"]:
+                result = post_text_to_facebook(fb_page, fb_token, text)
+        else:
+            result = post_text_to_facebook(fb_page, fb_token, text)
 
     if result["success"]:
         print(f"\n✅ POSTED SUCCESSFULLY! ID: {result['id']}")
