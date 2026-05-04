@@ -618,8 +618,23 @@ def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
     if result["success"]:
         print(f"\n✅ TRENDING POST PUBLISHED! ID: {result['id']}")
         print(f"   Topic: {trend['title']}")
+        commit_log_to_github({
+            "time":    datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "slot":    "trending",
+            "niche":   "News & Trends",
+            "topic":   trend["title"],
+            "post_id": result["id"],
+            "status":  "success",
+            "preview": text[:100],
+        }, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
     else:
         print(f"\n❌ FAILED: {result['error']}")
+        commit_log_to_github({
+            "time":   datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "slot":   "trending",
+            "status": "failed",
+            "error":  result["error"],
+        }, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
         sys.exit(1)
 
 
@@ -689,10 +704,81 @@ def main():
         else:
             result = post_text_to_facebook(fb_page, fb_token, text)
 
+def commit_log_to_github(entry: dict, gh_token: str, repo: str):
+    """
+    Append post result to data/post_log.json in GitHub repo.
+    This creates permanent data trail for self-improvement analysis.
+    """
+    if not gh_token or not repo:
+        print("  No GH_PAT — skipping log commit")
+        return
+
+    import base64
+    headers = {
+        "Authorization": f"token {gh_token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{repo}/contents/data/post_log.json"
+
+    try:
+        # Get existing file
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            existing = json.loads(
+                base64.b64decode(r.json()["content"]).decode()
+            )
+            sha = r.json()["sha"]
+        else:
+            existing = []
+            sha = None
+
+        # Append new entry, keep last 100
+        existing.append(entry)
+        existing = existing[-100:]
+
+        # Commit
+        content = base64.b64encode(
+            json.dumps(existing, indent=2, ensure_ascii=False).encode()
+        ).decode()
+        data = {
+            "message": f"log: {entry.get('slot', 'post')} {entry.get('time', '')}",
+            "content": content,
+            "branch": "main"
+        }
+        if sha:
+            data["sha"] = sha
+
+        r2 = requests.put(url, json=data, headers=headers, timeout=15)
+        if r2.status_code in (200, 201):
+            print(f"  ✅ Log committed to GitHub")
+        else:
+            print(f"  Log commit failed: {r2.status_code}")
+    except Exception as e:
+        print(f"  Log commit error: {e}")
+
+
     if result["success"]:
         print(f"\n✅ POSTED SUCCESSFULLY! ID: {result['id']}")
+        # Commit log to GitHub for self-improvement tracking
+        commit_log_to_github({
+            "time":     datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "slot":     args.slot,
+            "niche":    slot["niche"],
+            "language": slot["language"],
+            "hook_id":  slot["hook_id"],
+            "variation": slot["variation"],
+            "post_id":  result["id"],
+            "status":   "success",
+            "preview":  text[:100],
+        }, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
     else:
         print(f"\n❌ FAILED: {result['error']}")
+        commit_log_to_github({
+            "time":   datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+            "slot":   args.slot,
+            "status": "failed",
+            "error":  result["error"],
+        }, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
         sys.exit(1)
 
 
