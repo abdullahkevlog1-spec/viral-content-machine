@@ -396,37 +396,35 @@ def post_image_to_facebook(page_id: str, token: str, img_bytes: bytes, caption: 
         # Step 1 — Upload photo unpublished
         upload_r = requests.post(
             f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            params={"access_token": token},
-            data={"published": "false"},
+            data={"access_token": token, "published": "false"},
             files={"source": ("post.jpg", img_bytes, "image/jpeg")},
             timeout=45,
         )
         upload_data = upload_r.json()
         photo_id = upload_data.get("id")
-        print(f"  Photo upload response: {upload_data}")
+        print(f"  Photo upload: {photo_id or upload_data}")
 
         if not photo_id:
-            print("  Photo upload failed — posting text only")
+            print("  Photo upload failed — text fallback")
             return post_text_to_facebook(page_id, token, caption)
 
-        # Step 2 — Attach to feed post using JSON body
+        # Step 2 — Attach to feed using form data (NOT json=)
         feed_r = requests.post(
             f"https://graph.facebook.com/v19.0/{page_id}/feed",
-            params={"access_token": token},
-            json={
-                "message": caption,
-                "attached_media": [{"media_fbid": photo_id}]
+            data={
+                "message":           caption,
+                "attached_media[0]": f'{{"media_fbid":"{photo_id}"}}',
+                "access_token":      token,
             },
             timeout=30,
         )
         feed_data = feed_r.json()
-        print(f"  Feed post response: {feed_data}")
+        print(f"  Feed post: {feed_data.get('id') or feed_data}")
 
         if "id" in feed_data:
             return {"success": True, "id": feed_data["id"]}
 
-        # Last fallback — text only (always shows in feed)
-        print("  Feed attach failed — text only fallback")
+        print("  Feed failed — text fallback")
         return post_text_to_facebook(page_id, token, caption)
 
     except Exception as e:
