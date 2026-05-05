@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>AI with Abdullah — Control Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+/* ── BRAND TOKENS ─────────────────────────── */
+:root{
+  --bg:        #0a0a0a;
+  --surface:   #131313;
+  --surface2:  #1a1a1a;
+  --border:    #242424;
+  --orange:    #f97316;
+  --orange-dim:#7c3a0e;
+  --orange-glow:rgba(249,115,22,.15);
+  --warm:      #f0e6d3;
+  --muted:     #6b6b6b;
+  --success:   #22c55e;
+  --danger:    #ef4444;
+  --r:         16px;
+  --font-head: 'Bebas Neue', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* ── RESET ────────────────────────────────── */
+*{margin:0;padding:0;box-sizing:border-box;}
+
+body{
+  font-family:var(--font-body);
+  background:var(--bg);
+  color:var(--warm);
+  display:flex;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ── SIDEBAR ──────────────────────────────── */
+.sidebar{
+  width:260px;
+  min-height:100vh;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  padding:28px 16px;
+  position:fixed;
+  top:0;left:0;
+  z-index:100;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.brand{
+  padding:18px;
+  border-radius:var(--r);
+  background:linear-gradient(135deg,#1f0d00,#0a0a0a);
+  border:1px solid var(--orange-dim);
+  margin-bottom:12px;
+  position:relative;
+  overflow:hidden;
+}
+
+.brand::before{
+  content:'';
+  position:absolute;
+  width:80px;height:80px;
+  background:var(--orange-glow);
+  border-radius:50%;
+  top:-20px;right:-20px;
+  filter:blur(20px);
+}
+
+.brand-name{
+  font-family:var(--font-head);
+  font-size:22px;
+  letter-spacing:1px;
+  color:var(--orange);
+  line-height:1.1;
+}
+
+.brand-sub{
+  font-size:11px;
+  color:var(--muted);
+  margin-top:4px;
+}
+
+.status-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  background:#0a2010;
+  border:1px solid #166534;
+  color:var(--success);
+  font-size:10px;
+  font-weight:700;
+  padding:4px 10px;
+  border-radius:999px;
+  margin-top:10px;
+  letter-spacing:.5px;
+}
+
+.status-pill::before{
+  content:'';
+  width:6px;height:6px;
+  background:var(--success);
+  border-radius:50%;
+  animation:pulse 2s infinite;
+}
+
+@keyframes pulse{
+  0%,100%{opacity:1;}
+  50%{opacity:.3;}
+}
+
+.nav-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:12px 14px;
+  border-radius:12px;
+  border:1px solid transparent;
+  cursor:pointer;
+  font-size:14px;
+  font-weight:500;
+  color:var(--muted);
+  transition:all .2s;
+  user-select:none;
+}
+
+.nav-item:hover{
+  color:var(--warm);
+  background:var(--surface2);
+}
+
+.nav-item.active{
+  color:var(--orange);
+  background:var(--orange-glow);
+  border-color:var(--orange-dim);
+  font-weight:600;
+}
+
+.nav-icon{font-size:16px;}
+
+.nav-divider{
+  height:1px;
+  background:var(--border);
+  margin:8px 0;
+}
+
+/* ── MAIN ─────────────────────────────────── */
+.main{
+  margin-left:260px;
+  flex:1;
+  padding:28px;
+  min-height:100vh;
+}
+
+/* ── TOPBAR ───────────────────────────────── */
+.topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:28px;
+}
+
+.page-title{
+  font-family:var(--font-head);
+  font-size:36px;
+  letter-spacing:2px;
+  color:var(--warm);
+}
+
+.page-title span{color:var(--orange);}
+
+.topbar-right{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.time-badge{
+  font-family:var(--font-mono);
+  font-size:12px;
+  color:var(--muted);
+  background:var(--surface);
+  border:1px solid var(--border);
+  padding:8px 14px;
+  border-radius:999px;
+}
+
+/* ── PAGES ────────────────────────────────── */
+.page{display:none;}
+.page.active{display:block;animation:fadeUp .3s ease;}
+
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(10px);}
+  to{opacity:1;transform:translateY(0);}
+}
+
+/* ── CARDS ────────────────────────────────── */
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:22px;
+  margin-bottom:18px;
+}
+
+.card-title{
+  font-family:var(--font-head);
+  font-size:18px;
+  letter-spacing:1px;
+  color:var(--warm);
+  margin-bottom:14px;
+}
+
+/* ── STAT GRID ────────────────────────────── */
+.stat-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:14px;
+  margin-bottom:18px;
+}
+
+.stat-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:20px;
+  position:relative;
+  overflow:hidden;
+  transition:.2s;
+}
+
+.stat-card:hover{
+  border-color:var(--orange-dim);
+  transform:translateY(-2px);
+}
+
+.stat-card::before{
+  content:'';
+  position:absolute;
+  width:60px;height:60px;
+  background:var(--orange-glow);
+  border-radius:50%;
+  top:-10px;right:-10px;
+  filter:blur(15px);
+}
+
+.stat-value{
+  font-family:var(--font-head);
+  font-size:42px;
+  color:var(--orange);
+  line-height:1;
+}
+
+.stat-label{
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
+  margin-top:6px;
+}
+
+.stat-trend{
+  font-size:12px;
+  color:var(--success);
+  margin-top:4px;
+}
+
+/* ── PIPELINE ─────────────────────────────── */
+.pipeline{
+  display:flex;
+  align-items:center;
+  gap:0;
+  margin-bottom:18px;
+  overflow-x:auto;
+  padding-bottom:4px;
+}
+
+.pipeline-step{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--surface2);
+  border:1px solid var(--border);
+  padding:10px 16px;
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:.05em;
+  color:var(--muted);
+  white-space:nowrap;
+}
+
+.pipeline-step:first-child{border-radius:10px 0 0 10px;}
+.pipeline-step:last-child{border-radius:0 10px 10px 0;}
+
+.pipeline-step.done{
+  background:var(--orange-glow);
+  border-color:var(--orange-dim);
+  color:var(--orange);
+}
+
+.pipeline-arrow{
+  color:var(--border);
+  font-size:16px;
+  flex-shrink:0;
+}
+
+/* ── ACTIVITY ─────────────────────────────── */
+.activity-item{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:12px 0;
+  border-bottom:1px solid var(--border);
+  font-size:14px;
+}
+
+.activity-item:last-child{border-bottom:none;}
+
+.activity-dot{
+  width:8px;height:8px;
+  border-radius:50%;
+  background:var(--orange);
+  flex-shrink:0;
+}
+
+.activity-dot.success{background:var(--success);}
+.activity-dot.fail{background:var(--danger);}
+
+.activity-time{
+  font-family:var(--font-mono);
+  font-size:11px;
+  color:var(--muted);
+  margin-left:auto;
+  white-space:nowrap;
+}
+
+/* ── SCHEDULE SLOTS ───────────────────────── */
+.slot-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:14px;
+}
+
+.slot-card{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:18px;
+  position:relative;
+  overflow:hidden;
+}
+
+.slot-card.active-slot{
+  border-color:var(--orange-dim);
+  background:var(--orange-glow);
+}
+
+.slot-time{
+  font-family:var(--font-head);
+  font-size:28px;
+  letter-spacing:1px;
+  color:var(--orange);
+}
+
+.slot-label{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
+  margin-top:4px;
+}
+
+.slot-badge{
+  display:inline-block;
+  font-size:10px;
+  font-weight:700;
+  padding:3px 8px;
+  border-radius:999px;
+  margin-top:8px;
+}
+
+.slot-badge.en{background:#1e3a5f;color:#60a5fa;}
+.slot-badge.ur{background:#1f2d1f;color:#86efac;}
+.slot-badge.hi{background:#2d1f3f;color:#c084fc;}
+.slot-badge.tr{background:#3f1f1f;color:#fca5a5;}
+
+/* ── SUGGESTIONS ──────────────────────────── */
+.suggestion-card{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:18px;
+  margin-bottom:12px;
+  transition:.2s;
+}
+
+.suggestion-card:hover{
+  border-color:var(--orange-dim);
+}
+
+.suggestion-card.approved{
+  border-color:#166534;
+  background:#0a1a0a;
+  opacity:.7;
+}
+
+.suggestion-header{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:10px;
+}
+
+.priority-badge{
+  font-size:10px;
+  font-weight:700;
+  padding:3px 8px;
+  border-radius:999px;
+  letter-spacing:.05em;
+}
+
+.HIGH{background:#431407;color:#f97316;}
+.MEDIUM{background:#422006;color:#fb923c;}
+.LOW{background:#1a2e1a;color:#86efac;}
+
+.suggestion-problem{
+  font-size:14px;
+  font-weight:600;
+  color:var(--warm);
+  margin-bottom:6px;
+}
+
+.suggestion-action{
+  font-size:13px;
+  color:var(--muted);
+  font-family:var(--font-mono);
+  background:var(--bg);
+  padding:8px 12px;
+  border-radius:8px;
+  margin:8px 0;
+}
+
+.suggestion-impact{
+  font-size:12px;
+  color:var(--success);
+}
+
+.approve-btn{
+  margin-top:10px;
+  background:var(--orange);
+  color:var(--bg);
+  border:none;
+  padding:8px 16px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+  letter-spacing:.05em;
+  transition:.2s;
+}
+
+.approve-btn:hover{opacity:.85;}
+
+/* ── BUTTONS ──────────────────────────────── */
+.btn{
+  background:var(--orange);
+  color:var(--bg);
+  border:none;
+  padding:12px 20px;
+  border-radius:10px;
+  font-size:14px;
+  font-weight:700;
+  cursor:pointer;
+  letter-spacing:.05em;
+  transition:.2s;
+  font-family:var(--font-body);
+}
+
+.btn:hover{opacity:.85;transform:translateY(-1px);}
+
+.btn.ghost{
+  background:transparent;
+  color:var(--warm);
+  border:1px solid var(--border);
+}
+
+.btn.ghost:hover{
+  border-color:var(--orange-dim);
+  color:var(--orange);
+}
+
+/* ── FB STATS TABLE ───────────────────────── */
+.fb-post{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:14px 0;
+  border-bottom:1px solid var(--border);
+  font-size:13px;
+}
+
+.fb-post:last-child{border-bottom:none;}
+
+.fb-rank{
+  font-family:var(--font-head);
+  font-size:24px;
+  color:var(--orange-dim);
+  width:28px;
+  flex-shrink:0;
+}
+
+.fb-preview{
+  flex:1;
+  color:var(--warm);
+  line-height:1.5;
+}
+
+.fb-stats{
+  display:flex;
+  gap:14px;
+  font-family:var(--font-mono);
+  font-size:11px;
+  color:var(--muted);
+  white-space:nowrap;
+}
+
+.fb-stat-good{color:var(--success);}
+
+/* ── CHART WRAPPER ────────────────────────── */
+.chart-wrap{
+  position:relative;
+  height:220px;
+}
+
+/* ── LOG ITEM ─────────────────────────────── */
+.log-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 0;
+  border-bottom:1px solid var(--border);
+  font-size:13px;
+}
+
+.log-item:last-child{border-bottom:none;}
+
+.log-status{
+  font-size:16px;
+  flex-shrink:0;
+}
+
+.log-meta{
+  font-family:var(--font-mono);
+  font-size:10px;
+  color:var(--muted);
+  margin-left:auto;
+  white-space:nowrap;
+}
+
+/* ── TOAST ────────────────────────────────── */
+.toast{
+  position:fixed;
+  bottom:24px;right:24px;
+  background:var(--orange);
+  color:var(--bg);
+  padding:14px 20px;
+  border-radius:12px;
+  font-weight:700;
+  font-size:14px;
+  z-index:9999;
+  display:none;
+  box-shadow:0 8px 30px rgba(249,115,22,.4);
+}
+
+/* ── LOADER ───────────────────────────────── */
+.loader{
+  text-align:center;
+  padding:40px;
+  color:var(--muted);
+  font-size:14px;
+}
+
+/* ── RESPONSIVE ───────────────────────────── */
+@media(max-width:900px){
+  .sidebar{
+    width:100%;
+    min-height:auto;
+    position:relative;
+    flex-direction:row;
+    flex-wrap:wrap;
+    padding:14px;
+    gap:4px;
+  }
+  .main{margin-left:0;}
+  .stat-grid{grid-template-columns:repeat(2,1fr);}
+  .slot-grid{grid-template-columns:repeat(2,1fr);}
+  .brand{width:100%;}
+}
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-name">AI WITH<br>ABDULLAH</div>
+    <div class="brand-sub">Viral Content Machine v2 Pro</div>
+    <div class="status-pill">LIVE — AUTO POSTING</div>
+  </div>
+
+  <div class="nav-item active" onclick="show('dashboard',this)">
+    <span class="nav-icon">🏠</span> Dashboard
+  </div>
+  <div class="nav-item" onclick="show('schedule',this)">
+    <span class="nav-icon">⏰</span> Auto Schedule
+  </div>
+  <div class="nav-item" onclick="show('improve',this)">
+    <span class="nav-icon">🧠</span> Self-Improve
+  </div>
+  <div class="nav-item" onclick="show('analytics',this)">
+    <span class="nav-icon">📊</span> Analytics
+  </div>
+  <div class="nav-item" onclick="show('logs',this)">
+    <span class="nav-icon">📋</span> Post Logs
+  </div>
+
+  <div class="nav-divider"></div>
+
+  <div class="nav-item" onclick="show('settings',this)">
+    <span class="nav-icon">⚙️</span> Settings
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+<div class="topbar">
+  <div class="page-title" id="pageTitle">DASH<span>BOARD</span></div>
+  <div class="topbar-right">
+    <div class="time-badge" id="clock">--:--</div>
+  </div>
+</div>
+
+<!-- ═══ DASHBOARD ═════════════════════════════════════════ -->
+<section id="dashboard" class="page active">
+
+  <div class="pipeline">
+    <div class="pipeline-step done"><span>⚡</span> Generate</div>
+    <div class="pipeline-arrow">→</div>
+    <div class="pipeline-step done"><span>✅</span> Review</div>
+    <div class="pipeline-arrow">→</div>
+    <div class="pipeline-step done"><span>📅</span> Schedule</div>
+    <div class="pipeline-arrow">→</div>
+    <div class="pipeline-step done"><span>📤</span> Publish</div>
+    <div class="pipeline-arrow">→</div>
+    <div class="pipeline-step done"><span>📊</span> Analyze</div>
+    <div class="pipeline-arrow">→</div>
+    <div class="pipeline-step"><span>🔁</span> Improve</div>
+  </div>
+
+  <div class="stat-grid" id="dashStats">
+    <div class="stat-card">
+      <div class="stat-value" id="s-total">—</div>
+      <div class="stat-label">Total Posts</div>
+      <div class="stat-trend" id="s-week">Loading...</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="s-rate">—</div>
+      <div class="stat-label">Success Rate</div>
+      <div class="stat-trend">Auto-tracked</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="s-engage">—</div>
+      <div class="stat-label">Avg Engagement</div>
+      <div class="stat-trend">Likes+Comments+Shares</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="s-zero">—</div>
+      <div class="stat-label">Zero Engagement</div>
+      <div class="stat-trend">Posts to improve</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+    <div class="card">
+      <div class="card-title">RECENT ACTIVITY</div>
+      <div id="activityFeed">
+        <div class="loader">Loading activity...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">AI INSIGHTS</div>
+      <div id="aiInsights">
+        <div class="loader">Loading insights...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">WEEKLY REACH ESTIMATE</div>
+    <div class="chart-wrap">
+      <canvas id="weekChart"></canvas>
+    </div>
+  </div>
+
+</section>
+
+<!-- ═══ SCHEDULE ══════════════════════════════════════════ -->
+<section id="schedule" class="page">
+
+  <div class="slot-grid">
+    <div class="slot-card">
+      <div class="slot-time">9:00</div>
+      <div class="slot-label">🌅 Subah — AI & Tech</div>
+      <div><span class="slot-badge en">ENGLISH</span></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+        Hook: Curiosity Gap<br>
+        Tone: 7/10 Bold<br>
+        Carousel: 3 Slides
+      </div>
+    </div>
+
+    <div class="slot-card active-slot">
+      <div class="slot-time">11:00</div>
+      <div class="slot-label">🔥 Trending — Pakistan</div>
+      <div><span class="slot-badge hi">HINGLISH</span></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+        Auto-detects trending<br>
+        Google Trends PK<br>
+        RSS: Dawn · Geo · ARY
+      </div>
+    </div>
+
+    <div class="slot-card">
+      <div class="slot-time">2:00</div>
+      <div class="slot-label">☀️ Dopahar — Motivation</div>
+      <div><span class="slot-badge ur">ROMAN URDU</span></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+        Hook: Bold Claim<br>
+        Tone: 8/10 Aggressive<br>
+        Carousel: 3 Slides
+      </div>
+    </div>
+
+    <div class="slot-card">
+      <div class="slot-time">9:00</div>
+      <div class="slot-label">🌙 Raat — ASMR</div>
+      <div><span class="slot-badge hi">HINGLISH</span></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+        Hook: Relatable Pain<br>
+        Tone: 5/10 Warm<br>
+        Carousel: 3 Slides
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px;">
+    <div class="card-title">SELF-IMPROVE SCHEDULE</div>
+    <div class="activity-item">
+      <div class="activity-dot success"></div>
+      <div>Subah 8:00 AM — Analysis report auto-generate</div>
+      <div class="activity-time">Daily</div>
+    </div>
+    <div class="activity-item">
+      <div class="activity-dot success"></div>
+      <div>Raat 8:00 PM — Analysis report auto-generate</div>
+      <div class="activity-time">Daily</div>
+    </div>
+    <div class="activity-item">
+      <div class="activity-dot"></div>
+      <div>Har post ke baad — Post log GitHub commit</div>
+      <div class="activity-time">Auto</div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ═══ SELF-IMPROVE ══════════════════════════════════════ -->
+<section id="improve" class="page">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+    <div style="font-size:14px;color:var(--muted);" id="reportTime">Loading report...</div>
+    <button class="btn ghost" onclick="loadReport()">🔄 Refresh Report</button>
+  </div>
+
+  <div id="improveSuggestions">
+    <div class="loader">Loading AI suggestions from GitHub...</div>
+  </div>
+
+  <div class="card" style="margin-top:18px;">
+    <div class="card-title">FACEBOOK PERFORMANCE</div>
+    <div id="fbPosts">
+      <div class="loader">Loading Facebook data...</div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ═══ ANALYTICS ═════════════════════════════════════════ -->
+<section id="analytics" class="page">
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+    <div class="card">
+      <div class="card-title">NICHE BREAKDOWN</div>
+      <div class="chart-wrap">
+        <canvas id="nicheChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">SLOT PERFORMANCE</div>
+      <div class="chart-wrap">
+        <canvas id="slotChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">POST LOG SUMMARY</div>
+    <div id="logSummary">
+      <div class="loader">Loading...</div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ═══ POST LOGS ═════════════════════════════════════════ -->
+<section id="logs" class="page">
+  <div class="card">
+    <div class="card-title">ALL POST LOGS</div>
+    <div id="allLogs">
+      <div class="loader">Loading logs from GitHub...</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SETTINGS ══════════════════════════════════════════ -->
+<section id="settings" class="page">
+  <div class="card">
+    <div class="card-title">CONFIGURATION</div>
+    <p style="font-size:14px;color:var(--muted);margin-bottom:18px;">
+      Yeh settings GitHub Actions Secrets mein hain — is file mein kuch change nahi karna.
+    </p>
+
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);">Groq API Key</div>
+        <div style="font-family:var(--font-mono);font-size:13px;color:var(--orange);margin-top:4px;">gsk_*** (GitHub Secret)</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);">Facebook Page ID</div>
+        <div style="font-family:var(--font-mono);font-size:13px;color:var(--orange);margin-top:4px;">1078072238724577</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);">GitHub Repo</div>
+        <div style="font-family:var(--font-mono);font-size:13px;color:var(--orange);margin-top:4px;">abdullahkevlog1-spec/viral-content-machine</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);">Facebook Page</div>
+        <div style="font-family:var(--font-mono);font-size:13px;color:var(--orange);margin-top:4px;">AI with Abdullah</div>
+      </div>
+    </div>
+
+    <div style="margin-top:18px;">
+      <a href="https://github.com/abdullahkevlog1-spec/viral-content-machine/actions" 
+         target="_blank" class="btn" style="text-decoration:none;display:inline-block;">
+        🚀 Open GitHub Actions
+      </a>
+      &nbsp;
+      <a href="https://facebook.com/profile.php?id=615647765830510" 
+         target="_blank" class="btn ghost" style="text-decoration:none;display:inline-block;">
+        📱 Open Facebook Page
+      </a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+/* ── CONFIG ──────────────────────────────── */
+const REPO = 'abdullahkevlog1-spec/viral-content-machine';
+const RAW  = `https://raw.githubusercontent.com/${REPO}/main`;
+
+/* ── STATE ───────────────────────────────── */
+let postLog = [];
+let report  = null;
+let approved = JSON.parse(localStorage.getItem('approved') || '[]');
+
+/* ── CLOCK ───────────────────────────────── */
+function updateClock(){
+  const t = new Date().toLocaleTimeString('en-PK',{
+    hour:'2-digit', minute:'2-digit', second:'2-digit',
+    timeZone:'Asia/Karachi'
+  });
+  document.getElementById('clock').textContent = `🇵🇰 PKT ${t}`;
+}
+setInterval(updateClock,1000);
+updateClock();
+
+/* ── NAV ─────────────────────────────────── */
+const titles = {
+  dashboard:'DASH<span>BOARD</span>',
+  schedule:'AUTO<span>SCHEDULE</span>',
+  improve:'SELF<span>IMPROVE</span>',
+  analytics:'ANALY<span>TICS</span>',
+  logs:'POST<span>LOGS</span>',
+  settings:'SET<span>TINGS</span>'
+};
+
+function show(id, el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  if(el) el.classList.add('active');
+  document.getElementById('pageTitle').innerHTML = titles[id] || id.toUpperCase();
+}
+
+/* ── TOAST ───────────────────────────────── */
+function toast(msg, isError=false){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? '#ef4444' : 'var(--orange)';
+  t.style.display = 'block';
+  setTimeout(()=>t.style.display='none', 2500);
+}
+
+/* ── FETCH HELPERS ───────────────────────── */
+async function fetchJSON(url){
+  try{
+    const r = await fetch(url + '?t=' + Date.now());
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+}
+
+/* ── LOAD POST LOG ───────────────────────── */
+async function loadPostLog(){
+  postLog = await fetchJSON(`${RAW}/data/post_log.json`) || [];
+  renderDashboard();
+  renderLogs();
+  renderAnalytics();
+}
+
+/* ── LOAD REPORT ─────────────────────────── */
+async function loadReport(){
+  document.getElementById('improveSuggestions').innerHTML =
+    '<div class="loader">Loading from GitHub...</div>';
+  report = await fetchJSON(`${RAW}/data/report.json`);
+  renderImprove();
+}
+
+/* ── DASHBOARD ───────────────────────────── */
+function renderDashboard(){
+  const total   = postLog.length;
+  const success = postLog.filter(l=>l.status==='success').length;
+  const failed  = total - success;
+  const rate    = total ? Math.round(success/total*100) : 0;
+  const week    = postLog.filter(l=>{
+    const d = new Date(l.time+'Z');
+    return (Date.now()-d.getTime()) < 7*86400000;
+  }).length;
+
+  document.getElementById('s-total').textContent  = total || '0';
+  document.getElementById('s-rate').textContent   = rate + '%';
+  document.getElementById('s-week').textContent   = `↑ ${week} this week`;
+
+  // Activity feed
+  const recent = [...postLog].reverse().slice(0,8);
+  const af = document.getElementById('activityFeed');
+  if(!recent.length){
+    af.innerHTML='<div class="loader">No activity yet</div>';
+  } else {
+    af.innerHTML = recent.map(l=>`
+      <div class="activity-item">
+        <div class="activity-dot ${l.status==='success'?'success':'fail'}"></div>
+        <div>
+          <strong>${l.slot||'post'}</strong> — ${l.niche||''}
+          ${l.topic?`<br><small style="color:var(--muted)">${l.topic.substring(0,40)}</small>`:''}
+        </div>
+        <div class="activity-time">${(l.time||'').substring(0,16)}</div>
+      </div>
+    `).join('');
+  }
+
+  // Niche counts
+  const niches = {};
+  postLog.filter(l=>l.status==='success').forEach(l=>{
+    const n = l.niche||'Unknown';
+    niches[n]=(niches[n]||0)+1;
+  });
+  const topNiche = Object.entries(niches).sort((a,b)=>b[1]-a[1])[0];
+
+  // Slot counts
+  const slots = {};
+  postLog.forEach(l=>{
+    const s = l.slot||'unknown';
+    slots[s]=(slots[s]||0)+1;
+  });
+  const topSlot = Object.entries(slots).sort((a,b)=>b[1]-a[1])[0];
+
+  document.getElementById('aiInsights').innerHTML = `
+    <div class="activity-item">
+      <div class="activity-dot success"></div>
+      <div>Top Niche: <strong>${topNiche?topNiche[0]:'N/A'}</strong></div>
+      <div class="activity-time">${topNiche?topNiche[1]+' posts':''}</div>
+    </div>
+    <div class="activity-item">
+      <div class="activity-dot success"></div>
+      <div>Top Slot: <strong>${topSlot?topSlot[0]:'N/A'}</strong></div>
+      <div class="activity-time">${topSlot?topSlot[1]+' posts':''}</div>
+    </div>
+    <div class="activity-item">
+      <div class="activity-dot"></div>
+      <div>Failed posts: <strong>${failed}</strong></div>
+      <div class="activity-time">Fix in Self-Improve</div>
+    </div>
+    <div class="activity-item">
+      <div class="activity-dot success"></div>
+      <div>System Status: <strong>LIVE</strong></div>
+      <div class="activity-time">GitHub Actions</div>
+    </div>
+  `;
+
+  // Week chart (mock weekly data from log)
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const counts = days.map((_,i)=>{
+    const d = new Date();
+    d.setDate(d.getDate() - (6-i));
+    const ds = d.toISOString().substring(0,10);
+    return postLog.filter(l=>(l.time||'').startsWith(ds)).length;
+  });
+
+  const ctx = document.getElementById('weekChart');
+  if(ctx._chart) ctx._chart.destroy();
+  ctx._chart = new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:days,
+      datasets:[{
+        label:'Posts',
+        data:counts,
+        borderColor:'#f97316',
+        backgroundColor:'rgba(249,115,22,.1)',
+        fill:true,
+        tension:.4,
+        pointBackgroundColor:'#f97316',
+        pointRadius:5
+      }]
+    },
+    options:{
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#6b6b6b'},grid:{color:'#1a1a1a'}},
+        y:{ticks:{color:'#6b6b6b'},grid:{color:'#1a1a1a'},beginAtZero:true}
+      },
+      responsive:true,
+      maintainAspectRatio:false
+    }
+  });
+}
+
+/* ── SELF-IMPROVE ────────────────────────── */
+function renderImprove(){
+  const el = document.getElementById('improveSuggestions');
+  const fbEl = document.getElementById('fbPosts');
+
+  if(!report){
+    el.innerHTML='<div class="loader">Koi report nahi — GitHub Actions se "Self-Improve" workflow manually run karo</div>';
+    fbEl.innerHTML='';
+    document.getElementById('reportTime').textContent='No report yet';
+    return;
+  }
+
+  document.getElementById('reportTime').textContent =
+    `✅ Last report: ${report.generated_at} UTC`;
+
+  // Update dashboard stats from report
+  const fb = report.facebook||{};
+  document.getElementById('s-engage').textContent = fb.avg_engagement||'0';
+  document.getElementById('s-zero').textContent   = fb.zero_engagement||'0';
+
+  // Suggestions
+  const sug = report.suggestions||[];
+  if(!sug.length){
+    el.innerHTML='<div class="loader">Koi suggestions nahi</div>';
+  } else {
+    el.innerHTML = sug.map((s,i)=>{
+      const done = approved.includes(i);
+      return `
+        <div class="suggestion-card ${done?'approved':''}">
+          <div class="suggestion-header">
+            <span class="priority-badge ${s.priority}">${s.priority}</span>
+            <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">
+              ${s.category}
+            </span>
+            ${done?'<span style="margin-left:auto;color:var(--success);font-size:12px;">✅ Approved</span>':''}
+          </div>
+          <div class="suggestion-problem">🔍 ${s.problem||''}</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:8px;">💡 ${s.suggestion||''}</div>
+          <div class="suggestion-action">📋 ${s.action||''}</div>
+          <div class="suggestion-impact">📈 ${s.impact||''}</div>
+          ${!done?`<button class="approve-btn" onclick="approve(${i})">✅ APPROVE #${i+1}</button>`:''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  // FB Posts
+  const posts = (fb.best_post||fb.worst_post) ? [fb.best_post, fb.worst_post].filter(Boolean) : [];
+  if(!posts.length){
+    fbEl.innerHTML='<div class="loader">No Facebook data in report</div>';
+  } else {
+    fbEl.innerHTML = `
+      <div class="fb-post">
+        <div class="fb-rank">🏆</div>
+        <div class="fb-preview">${fb.best_post?.preview||'—'}...</div>
+        <div class="fb-stats">
+          <span class="fb-stat-good">👍 ${fb.best_post?.likes||0}</span>
+          <span>💬 ${fb.best_post?.comments||0}</span>
+          <span>🔄 ${fb.best_post?.shares||0}</span>
+        </div>
+      </div>
+      <div class="fb-post">
+        <div class="fb-rank" style="color:#444">📉</div>
+        <div class="fb-preview">${fb.worst_post?.preview||'—'}...</div>
+        <div class="fb-stats">
+          <span>👍 ${fb.worst_post?.likes||0}</span>
+          <span>💬 ${fb.worst_post?.comments||0}</span>
+          <span>🔄 ${fb.worst_post?.shares||0}</span>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function approve(i){
+  if(!approved.includes(i)) approved.push(i);
+  localStorage.setItem('approved', JSON.stringify(approved));
+  renderImprove();
+  toast(`Suggestion #${i+1} approved!`);
+}
+
+/* ── ANALYTICS ───────────────────────────── */
+function renderAnalytics(){
+  // Niche chart
+  const niches = {};
+  postLog.filter(l=>l.status==='success').forEach(l=>{
+    const n=l.niche||'Unknown';
+    niches[n]=(niches[n]||0)+1;
+  });
+
+  const nc = document.getElementById('nicheChart');
+  if(nc._chart) nc._chart.destroy();
+  nc._chart = new Chart(nc,{
+    type:'doughnut',
+    data:{
+      labels:Object.keys(niches),
+      datasets:[{
+        data:Object.values(niches),
+        backgroundColor:['#f97316','#fb923c','#fdba74','#fed7aa','#fde68a']
+      }]
+    },
+    options:{
+      plugins:{legend:{labels:{color:'#f0e6d3'}}},
+      responsive:true,
+      maintainAspectRatio:false
+    }
+  });
+
+  // Slot chart
+  const slots = {};
+  postLog.forEach(l=>{
+    const s=l.slot||'unknown';
+    slots[s]=(slots[s]||0)+1;
+  });
+
+  const sc = document.getElementById('slotChart');
+  if(sc._chart) sc._chart.destroy();
+  sc._chart = new Chart(sc,{
+    type:'bar',
+    data:{
+      labels:Object.keys(slots),
+      datasets:[{
+        label:'Posts',
+        data:Object.values(slots),
+        backgroundColor:'#f97316'
+      }]
+    },
+    options:{
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#6b6b6b'},grid:{color:'#1a1a1a'}},
+        y:{ticks:{color:'#6b6b6b'},grid:{color:'#1a1a1a'},beginAtZero:true}
+      },
+      responsive:true,
+      maintainAspectRatio:false
+    }
+  });
+
+  // Log summary
+  const total   = postLog.length;
+  const success = postLog.filter(l=>l.status==='success').length;
+  const failed  = total-success;
+  const errors  = [...new Set(postLog.filter(l=>l.error).map(l=>l.error))].slice(0,3);
+
+  document.getElementById('logSummary').innerHTML = `
+    <div class="activity-item">
+      <div class="activity-dot success"></div>
+      <div>Total posts logged</div>
+      <div class="activity-time">${total}</div>
+    </div>
+    <div class="activity-item">
+      <div class="activity-dot success"></div>
+      <div>Successful</div>
+      <div class="activity-time">${success}</div>
+    </div>
+    <div class="activity-item">
+      <div class="activity-dot fail"></div>
+      <div>Failed</div>
+      <div class="activity-time">${failed}</div>
+    </div>
+    ${errors.map(e=>`
+      <div class="activity-item">
+        <div class="activity-dot fail"></div>
+        <div style="font-family:var(--font-mono);font-size:11px;">${e.substring(0,60)}</div>
+      </div>
+    `).join('')}
+  `;
+}
+
+/* ── POST LOGS PAGE ──────────────────────── */
+function renderLogs(){
+  const el = document.getElementById('allLogs');
+  if(!postLog.length){
+    el.innerHTML='<div class="loader">Koi logs nahi — pehle auto-post run karo</div>';
+    return;
+  }
+
+  el.innerHTML = [...postLog].reverse().map(l=>`
+    <div class="log-item">
+      <div class="log-status">${l.status==='success'?'✅':'❌'}</div>
+      <div>
+        <strong>${l.slot||'post'}</strong>
+        ${l.niche?`<span style="color:var(--muted)"> · ${l.niche}</span>`:''}
+        ${l.topic?`<br><span style="font-size:11px;color:var(--muted)">${l.topic.substring(0,50)}</span>`:''}
+        ${l.error?`<br><span style="font-size:11px;color:var(--danger);font-family:var(--font-mono)">${l.error.substring(0,60)}</span>`:''}
+        ${l.post_id?`<br><span style="font-size:10px;color:var(--muted);font-family:var(--font-mono)">ID: ${l.post_id}</span>`:''}
+      </div>
+      <div class="log-meta">${(l.time||'').substring(0,16)}</div>
+    </div>
+  `).join('');
+}
+
+/* ── INIT ────────────────────────────────── */
+async function init(){
+  await loadPostLog();
+  await loadReport();
+}
+
+init();
+</script>
+</body>
+</html>
