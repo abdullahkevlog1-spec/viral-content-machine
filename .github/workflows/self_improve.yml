@@ -2,10 +2,12 @@ name: Self-Improve — AI with Abdullah
 
 on:
   schedule:
-    # 11:00 PM PKT = 6:00 PM UTC
-    - cron: '0 18 * * *'
+    # 8:00 AM PKT  = 3:00 UTC  — subah report
+    - cron: '0 3 * * *'
+    # 8:00 PM PKT  = 15:00 UTC — raat report
+    - cron: '0 15 * * *'
 
-  workflow_dispatch:  # Manual trigger from GitHub Actions tab
+  workflow_dispatch:  # Manual trigger — abhi chalao
 
 jobs:
   analyze:
@@ -22,7 +24,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests groq
+        run: pip install requests
 
       - name: Run self-improvement analysis
         env:
