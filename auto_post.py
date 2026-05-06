@@ -330,49 +330,90 @@ def download_image(niche: str, post_text: str, api_key: str) -> bytes | None:
 # ─────────────────────────────────────────────────────────────────────────────
 #  FACEBOOK POSTING
 # ─────────────────────────────────────────────────────────────────────────────
-def post_carousel_to_facebook(page_id: str, token: str,
-                              slides: list, caption: str) -> dict:
+def merge_slides(slides: list) -> bytes:
     """
-    Post 3-slide carousel to Facebook feed.
-    Each slide uploaded as unpublished photo, then attached to one feed post.
+    Merge 3 carousel slides into ONE tall image (1080 x 3240).
+    This avoids the attached_media bracket-encoding bug entirely.
+    One image = one clean timeline post.
+    """
+    from PIL import Image
+    import io
+
+    images = []
+    for s in slides:
+        try:
+            img = Image.open(io.BytesIO(s)).convert("RGB")
+            # Ensure all slides are same width
+            if img.width != 1080:
+                img = img.resize((1080, 1080), Image.LANCZOS)
+            images.append(img)
+        except Exception as e:
+            print(f"  Slide merge warning: {e}")
+
+    if not images:
+        return slides[0] if slides else b""
+
+    # Stack vertically
+    total_h = sum(img.height for img in images)
+    merged  = Image.new("RGB", (1080, total_h), (13, 13, 13))
+    y = 0
+    for img in images:
+        merged.paste(img, (0, y))
+        y += img.height
+
+    buf = io.BytesIO()
+    merged.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
+def post_to_facebook_with_image(page_id: str, token: str,
+                                 img_bytes: bytes, caption: str) -> dict:
+    """
+    THE ONLY RELIABLE WAY to post image to Facebook timeline.
+    Uses /photos with published=true — creates timeline post + visible in feed.
+    No attached_media, no bracket encoding bugs.
     """
     try:
-        photo_ids = []
-        for i, img_bytes in enumerate(slides):
-            r = requests.post(
-                f"https://graph.facebook.com/v19.0/{page_id}/photos",
-                data={"access_token": token, "published": "false"},
-                files={"source": (f"slide_{i+1}.jpg", img_bytes, "image/jpeg")},
-                timeout=45,
-            )
-            pid = r.json().get("id")
-            if not pid:
-                print(f"  Slide {i+1} upload failed: {r.json()}")
-                continue
-            photo_ids.append(pid)
-            print(f"  Slide {i+1} uploaded: {pid}")
-
-        if not photo_ids:
-            return {"success": False, "error": "All slides failed to upload"}
-
-        # Attach all photos to one feed post
-        data = {"message": caption, "access_token": token}
-        for i, pid in enumerate(photo_ids):
-            data[f"attached_media[{i}]"] = f'{{"media_fbid":"{pid}"}}'
-
-        feed_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/feed",
-            data=data,
-            timeout=30,
+        r = requests.post(
+            f"https://graph.facebook.com/v19.0/{page_id}/photos",
+            data={
+                "caption":      caption,
+                "access_token": token,
+                "published":    "true",
+            },
+            files={"source": ("post.jpg", img_bytes, "image/jpeg")},
+            timeout=60,
         )
-        feed_data = feed_r.json()
-        if "id" in feed_data:
-            return {"success": True, "id": feed_data["id"]}
+        data = r.json()
+        print(f"  FB response: {data}")
 
-        return {"success": False, "error": feed_data.get("error", {}).get("message", "Unknown")}
+        if "id" in data or "post_id" in data:
+            return {"success": True,
+                    "id": data.get("post_id", data.get("id"))}
+
+        err = data.get("error", {}).get("message", str(data))
+        return {"success": False, "error": err}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def post_carousel_to_facebook(page_id: str, token: str,
+                               slides: list, caption: str) -> dict:
+    """
+    Merge 3 slides into 1 tall image → post to timeline.
+    Guaranteed to appear in feed. No attached_media bugs.
+    """
+    print("  Merging slides into single image...")
+    merged = merge_slides(slides)
+    print(f"  Merged image: {len(merged)//1024}KB")
+    return post_to_facebook_with_image(page_id, token, merged, caption)
+
+
+def post_image_to_facebook(page_id: str, token: str,
+                            img_bytes: bytes, caption: str) -> dict:
+    """Single image post — same reliable approach."""
+    return post_to_facebook_with_image(page_id, token, img_bytes, caption)
     try:
         r = requests.post(
             f"https://graph.facebook.com/v19.0/{page_id}/feed",
