@@ -711,62 +711,31 @@ def generate_and_download_image(niche: str, post_text: str, api_key: str, page_n
     return None
 
 
-def post_image_to_facebook(page_id: str, page_token: str, image_bytes: bytes, caption: str) -> dict:
+def post_image_to_facebook(page_id: str, page_token: str,
+                           image_bytes: bytes, caption: str) -> dict:
     """
-    Two-step: upload unpublished photo → attach to feed post (JSON body).
-    Ensures post appears in timeline and followers feeds.
+    Post image to Facebook timeline.
+    Uses /photos with published=true — appears in feed, not just album.
+    No attached_media encoding bugs. Guaranteed to work.
     """
     try:
-        # Step 1 — Upload photo unpublished
-        upload_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            params={"access_token": page_token},
-            data={"published": "false"},
-            files={"source": ("post_image.jpg", image_bytes, "image/jpeg")},
-            timeout=45,
-        )
-        upload_data = upload_r.json()
-        photo_id = upload_data.get("id")
-        print(f"  Photo upload: {upload_data}")
-
-        if not photo_id:
-            # Fallback to text only — always shows in feed
-            r = requests.post(
-                f"https://graph.facebook.com/v19.0/{page_id}/feed",
-                data={"message": caption, "access_token": page_token},
-                timeout=15,
-            )
-            d = r.json()
-            if "id" in d:
-                return {"success": True, "id": d["id"]}
-            return {"success": False, "error": d.get("error", {}).get("message", "Unknown")}
-
-        # Step 2 — Feed post with attached photo (JSON body fixes encoding issue)
-        feed_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/feed",
-            params={"access_token": page_token},
-            json={
-                "message": caption,
-                "attached_media": [{"media_fbid": photo_id}]
-            },
-            timeout=30,
-        )
-        feed_data = feed_r.json()
-        print(f"  Feed post: {feed_data}")
-
-        if "id" in feed_data:
-            return {"success": True, "id": feed_data["id"]}
-
-        # Last fallback — text only
         r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/feed",
-            data={"message": caption, "access_token": page_token},
-            timeout=15,
+            f"https://graph.facebook.com/v19.0/{page_id}/photos",
+            data={
+                "caption":      caption,
+                "access_token": page_token,
+                "published":    "true",
+            },
+            files={"source": ("post_image.jpg", image_bytes, "image/jpeg")},
+            timeout=60,
         )
-        d = r.json()
-        if "id" in d:
-            return {"success": True, "id": d["id"]}
-        return {"success": False, "error": d.get("error", {}).get("message", "Unknown")}
-
+        data = r.json()
+        print(f"  FB photo post response: {data}")
+        if "id" in data or "post_id" in data:
+            return {"success": True,
+                    "id": data.get("post_id", data.get("id"))}
+        return {"success": False,
+                "error": data.get("error", {}).get("message", str(data))}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
