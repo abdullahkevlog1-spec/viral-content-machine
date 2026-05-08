@@ -335,72 +335,71 @@ Mix naturally — don't force either language. Sound like a smart Pakistani/Indi
     },
 }
 
+CONTENT_FRAMEWORKS_ENGINE = [
+    {"name": "Confession",       "structure": "Personal confession → why it matters → question to reader"},
+    {"name": "Myth vs Reality",  "structure": "Common myth → destroy with specific fact → real truth"},
+    {"name": "Before/After",     "structure": "Stark transformation → specific turning point → how reader can do it"},
+    {"name": "Unpopular Opinion","structure": "Bold opinion → 2-3 specific reasons → invite debate"},
+    {"name": "Behind The Scenes","structure": "Hidden truth revealed → insider knowledge → reader feels special"},
+    {"name": "The Mistake",      "structure": "Specific mistake → what went wrong → clear lesson"},
+    {"name": "Numbered Reveal",  "structure": "3 surprising insights → build to best last"},
+    {"name": "Sensory Story",    "structure": "Vivid sensory scene → sounds textures smells → transport reader"},
+    {"name": "What Nobody Says", "structure": "What everyone thinks → what nobody says → the real truth"},
+    {"name": "Time Machine",     "structure": "You from past → what changed → message to past self"},
+]
+
 def build_prompt(niche: str, hook_style: dict, variation: str, tone_level: int, language: str = "English") -> str:
     profile = NICHE_PROFILES[niche]
     hook_examples = "\n".join([f'  • "{ex}"' for ex in hook_style["examples"]])
     hashtags_sample = " ".join(random.sample(profile["hashtag_pool"], min(5, len(profile["hashtag_pool"]))))
     lang = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["English"])
+    framework = random.choice(CONTENT_FRAMEWORKS_ENGINE)
 
     length_guide = {
-        "Emotional":          "Medium-long (200-280 words). Tell a mini-story. Make it personal and deep.",
-        "Educational":        "Long and detailed (250-320 words). Teach step by step. Give real examples.",
-        "Bold/Controversial": "Short and punchy (120-180 words). Every word must hit hard. No fluff.",
-    }.get(variation, "Medium (180-250 words).")
+        "Emotional":          "180-250 words. Deep personal emotional story.",
+        "Educational":        "220-300 words. Specific actionable with real examples.",
+        "Bold/Controversial": "100-160 words. Short punchy lines. Every word hits.",
+    }.get(variation, "180-250 words.")
 
     niche_context = {
-        "AI & Tech":   "Reference REAL AI tools (ChatGPT, Gemini, Midjourney, Claude, Sora, Copilot). Give surprising facts. Show specific use cases people can try TODAY.",
-        "Motivation":  "Reference specific real struggles: job rejection, 2am overthinking, feeling behind peers, impostor syndrome. Be raw. Not preachy.",
-        "ASMR / Satisfying": "Describe specific sensory details: kinetic sand sound, soap cutting, slime stretching, rain on glass, bubble wrap popping. Make reader feel it.",
-        "Business":    "Give specific tactics with numbers: '3 clients in 2 weeks', 'Rs.50k with one skill'. Reference real Pakistani market situations.",
-    }.get(niche, "Be hyper-specific, real, and detailed. Reference real things people recognize.")
+        "AI & Tech":         "Name SPECIFIC: ChatGPT-4o, Gemini 1.5 Pro, Claude 3.5, Midjourney V6, Sora. Real numbers, real impact.",
+        "Motivation":        "REAL Pakistan scenarios: raat 2 baje akele kaam, parents ki umeedein, rejection letter, failed attempt.",
+        "ASMR / Satisfying": "SPECIFIC sensory: kinetic sand texture, soap crunch sound, slime stretch pop, rain on window glass.",
+        "Business":          "Specific numbers: '3 clients in 2 weeks', 'Rs.50k with one skill'. Real Pakistani market.",
+    }.get(niche, "Be hyper-specific. Name real things. No vague statements.")
 
-    prompt = f"""You are Pakistan's top viral Facebook content writer. 500K+ page followers trust your voice.
-Your secret: you write like a real human — personal, specific, never preachy.
+    prompt = f"""You are Pakistan's #1 viral Facebook creator. Posts feel human, raw, real — never AI-generated.
 
-LANGUAGE — NON-NEGOTIABLE:
-{lang['instruction']}
-
+LANGUAGE (non-negotiable): {lang['instruction']}
 NICHE: {niche}
-NICHE CONTEXT: {niche_context}
+SPECIFICS: {niche_context}
 HOOK: {hook_style['name']} — {hook_style['psychology']}
-Example hooks (inspire only, do NOT copy):
-{hook_examples}
-VARIATION: {variation} — {VARIATION_INSTRUCTIONS[variation]}
-TONE: {tone_level}/10 — {tone_descriptor(tone_level)}
+VARIATION: {variation}
+TONE: {tone_level}/10 {"= aggressive, polarizing" if tone_level >= 7 else "= warm, personal, intimate" if tone_level <= 4 else "= confident, direct, bold"}
 LENGTH: {length_guide}
 
-POST STRUCTURE — blank line between each part:
+FRAMEWORK: {framework['name']}
+Structure: {framework['structure']}
 
-[HOOK — 1-2 lines]
-Scroll-stopping. Specific. Uses {hook_style['name']} psychology.
-Name real things. Real feelings. Real situations.
+POST FORMAT:
+[HOOK — 1-2 lines: {hook_style['name']} psychology]
 
-[BODY — 3-6 lines]
-Go DEEP. Don't just state — explain and expand.
-Give real examples, specific details, numbers where possible.
-Build emotional momentum line by line.
+[BODY — specific details, real feelings, framework structure visible]
 
-[PUNCH — 1-2 lines]
-The unexpected angle. Say what others won't.
-The line people screenshot and share.
+[PUNCH — the screenshot-worthy line]
 
-[CTA — 2-3 lines]
-Conversational, not salesy. Ask a real question OR direct instruction.
-{lang['cta_note']}
+[CTA]: {lang['cta_note']}
 End with: {hashtags_sample}
-{lang['hashtag_note']}
 
 RULES:
-1. Return ONLY the post. No labels. No preamble.
-2. BANNED: "stay motivated", "work hard", "believe in yourself", "never give up",
-   "you can do it", "dream big", "in today's world", "game changer", "think outside the box",
-   "most people don't realize", "it's no secret", "at the end of the day"
-3. Do NOT start with: "In today's", "The truth is", "As we all know", "Most people"
-4. Write like texting a close friend who needs to hear this RIGHT NOW
-5. 3-6 emojis placed naturally — not forced
-6. Every single line must earn its place
+1. Return ONLY post text. No labels. No preamble.
+2. BANNED: "stay motivated" "work hard" "believe in yourself" "never give up" "dream big"
+   "in today's world" "game changer" "think outside the box" "most people don't realize"
+3. Max 12 words per line. 3-5 emojis natural.
+4. Framework MUST be clearly visible in structure
+5. Each post must feel DIFFERENT from typical AI content
 
-Write now. Start with the hook:"""
+Write now:"""
 
     return prompt
 
