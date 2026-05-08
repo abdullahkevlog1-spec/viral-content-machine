@@ -98,78 +98,79 @@ BANNED_PHRASES = [
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  CONTENT FRAMEWORKS — Rotate for variety
+# ─────────────────────────────────────────────────────────────────────────────
+CONTENT_FRAMEWORKS = [
+    {"name": "Confession",       "structure": "Personal confession → why it matters → question to reader"},
+    {"name": "Myth vs Reality",  "structure": "State common myth → destroy with specific fact → reveal truth"},
+    {"name": "Before/After",     "structure": "Stark transformation → specific turning point → how reader can do it"},
+    {"name": "Unpopular Opinion","structure": "Bold opinion → 2-3 specific reasons → invite debate"},
+    {"name": "Behind The Scenes","structure": "Reveal hidden truth → insider knowledge → make reader feel special"},
+    {"name": "The Mistake",      "structure": "Specific mistake → what went wrong → clear lesson extracted"},
+    {"name": "Numbered Reveal",  "structure": "3 specific surprising insights → build to best one last"},
+    {"name": "Sensory Story",    "structure": "Vivid sensory scene → sounds textures smells → transport reader"},
+    {"name": "What Nobody Says", "structure": "What everyone thinks → what nobody says out loud → the truth"},
+    {"name": "Time Machine",     "structure": "You from 5 years ago → what changed → message to your past self"},
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  CONTENT GENERATION
 # ─────────────────────────────────────────────────────────────────────────────
 def build_prompt(slot: dict) -> str:
-    hook     = HOOKS.get(slot["hook_id"], HOOKS["curiosity"])
-    lang_ins = LANGUAGE_INSTRUCTIONS.get(slot["language"], LANGUAGE_INSTRUCTIONS["English"])
-    hashtags = NICHE_HASHTAGS.get(slot["niche"], "#AI #Tech #Pakistan")
-    banned   = ", ".join(f'"{p}"' for p in BANNED_PHRASES[:12])
-    tone     = slot["tone"]
-    niche    = slot["niche"]
+    hook      = HOOKS.get(slot["hook_id"], HOOKS["curiosity"])
+    lang_ins  = LANGUAGE_INSTRUCTIONS.get(slot["language"], LANGUAGE_INSTRUCTIONS["English"])
+    hashtags  = NICHE_HASHTAGS.get(slot["niche"], "#Pakistan #AI #Tech")
+    niche     = slot["niche"]
     variation = slot["variation"]
+    tone      = slot["tone"]
+    framework = random.choice(CONTENT_FRAMEWORKS)
 
-    # Vary post length based on slot
     length_guide = {
-        "Emotional":         "Medium-long (200-280 words). Tell a mini-story. Make it personal and deep.",
-        "Educational":       "Long and detailed (250-320 words). Teach step by step. Give real examples.",
-        "Bold/Controversial": "Short and punchy (120-180 words). Every word must hit hard. No fluff.",
-    }.get(variation, "Medium (180-250 words).")
+        "Emotional":          "180-250 words. Deep, personal, emotional story.",
+        "Educational":        "220-300 words. Specific, actionable, real examples.",
+        "Bold/Controversial": "100-160 words. Short punchy lines. Every word hits hard.",
+    }.get(variation, "180-250 words.")
 
-    niche_context = {
-        "AI & Tech": "Reference REAL AI tools (ChatGPT, Gemini, Midjourney, Copilot, Claude, Sora). Give specific use cases. Share surprising facts about AI that people don't know.",
-        "Motivation": "Share a SPECIFIC life struggle or mindset shift. Reference real scenarios: job loss, rejection, staying up at 2am, feeling behind in life. Be raw and honest.",
-        "ASMR / Satisfying": "Describe SPECIFIC sensory experiences: the sound of rain on glass, kinetic sand, soap cutting, slime stretching. Make the reader feel it physically.",
-    }.get(niche, "Be specific, real, and detailed.")
+    niche_specifics = {
+        "AI & Tech":         "Name SPECIFIC tools: ChatGPT-4o, Gemini 1.5 Pro, Claude 3.5, Midjourney V6, Sora, Copilot. Real numbers. Real impact.",
+        "Motivation":        "REAL Pakistan scenarios: raat 2 baje akele kaam, parents ki umeedein, peer pressure, rejection letter, failed exam.",
+        "ASMR / Satisfying": "SPECIFIC sensory: kinetic sand texture under fingers, soap bar crunch sound, slime stretching pop, rain drops on window glass.",
+        "News & Trends":     "SPECIFIC: what happened exactly, who, when, why Pakistani audience should care RIGHT NOW.",
+    }.get(niche, "Be hyper-specific. Name real things. No vague statements allowed.")
 
-    return f"""You are Pakistan's top viral Facebook content writer with 500K+ page followers.
-Your secret: you write like a real human, not a bot. Every post feels personal and specific.
+    return f"""You are Pakistan's #1 viral Facebook creator. Posts feel human, raw, real.
 
-LANGUAGE:
-{lang_ins}
-
+LANGUAGE (non-negotiable): {lang_ins}
 NICHE: {niche}
-NICHE GUIDE: {niche_context}
-
-HOOK TYPE: {hook['name']}
-HOOK PSYCHOLOGY: {hook['psychology']}
+SPECIFICS: {niche_specifics}
+HOOK: {hook['name']} psychology — {hook['psychology']}
 VARIATION: {variation}
-TONE: {tone}/10 {"(aggressive, bold, debate-starting)" if tone >= 7 else "(warm, relatable, honest)" if tone <= 4 else "(confident, direct, clear)"}
-
+TONE: {tone}/10 {"= aggressive, polarizing, debate-starting" if tone >= 7 else "= warm, personal, intimate" if tone <= 4 else "= confident, direct, bold"}
 LENGTH: {length_guide}
 
-POST STRUCTURE:
+USE THIS FRAMEWORK: {framework['name']}
+Structure: {framework['structure']}
 
-PART 1 — HOOK (1-2 lines)
-Must stop the scroll instantly. Use {hook['name']} psychology.
-Be specific. NOT vague. Name real things, real feelings, real situations.
+POST FORMAT — blank line between each section:
+[HOOK — 1-2 lines: scroll-stopper using {hook['name']} psychology]
 
-PART 2 — BODY (3-6 lines depending on length)
-Go DEEP. Don't just state — explain, expand, give examples.
-Each line = one clear idea. Build emotional momentum.
-Reference specific details: tools, numbers, situations, feelings.
+[BODY — specific, deep, varied sentences. Real details, real feelings]
 
-PART 3 — PUNCH (1-2 lines)
-Land the unexpected angle. Say what others won't say.
-This is the line people screenshot and share.
+[PUNCH — the one line people screenshot]
 
-PART 4 — CTA (2-3 lines)
-Natural, conversational — NOT salesy.
-Ask a question OR give a direct instruction.
-End with: {hashtags}
+[CTA + hashtags: {hashtags}]
 
-ABSOLUTE RULES:
-1. Return ONLY the post. No labels. No "Here is your post:".
-2. BANNED WORDS — instant reject: {banned}
-3. NO generic opener: "In today's world", "The truth is", "Most people don't know"
-4. Every line must be SPECIFIC. Vague = fail. Generic = fail.
-5. Write like you're texting a close friend who needs to hear this.
-6. Minimum 3 blank lines between sections for readability.
-7. 3-6 emojis placed naturally — not forced.
+HARD RULES:
+1. Return ONLY post text. Zero labels. Zero preamble.
+2. BANNED: "stay motivated" "work hard" "believe in yourself" "never give up" "dream big"
+   "in today's world" "game changer" "think outside the box" "most people don't realize"
+3. NEVER start with: "In today's" "The truth is" "Most people" "As we all know"
+4. Max 12 words per line
+5. 3-5 emojis naturally placed
+6. Framework MUST be clearly visible in structure — not just surface level
+7. Every post must feel like a DIFFERENT person wrote it from last post
 
-Start directly with the hook now:"""
-
-
+Write now:"""
 def is_generic(text: str) -> bool:
     t = text.lower()
     return any(p in t for p in BANNED_PHRASES)
@@ -401,12 +402,61 @@ def post_to_facebook_with_image(page_id: str, token: str,
 def post_carousel_to_facebook(page_id: str, token: str,
                                slides: list, caption: str) -> dict:
     """
-    Merge 3 slides into 1 tall image → post to timeline.
-    Guaranteed to appear in feed. No attached_media bugs.
+    Post 3-slide carousel to Facebook feed.
+    Builds request body manually to avoid urllib bracket-encoding bug.
+    App must be in Live mode for this to work.
     """
-    print("  Merging slides into single image...")
+    import urllib.parse
+
+    # Step 1 — Upload each slide as unpublished photo
+    photo_ids = []
+    for i, img_bytes in enumerate(slides):
+        try:
+            r = requests.post(
+                f"https://graph.facebook.com/v19.0/{page_id}/photos",
+                data={"access_token": token, "published": "false"},
+                files={"source": (f"slide_{i+1}.jpg", img_bytes, "image/jpeg")},
+                timeout=45,
+            )
+            pid = r.json().get("id")
+            if pid:
+                photo_ids.append(pid)
+                print(f"  ✅ Slide {i+1} uploaded: {pid}")
+            else:
+                print(f"  ❌ Slide {i+1} failed: {r.json()}")
+        except Exception as e:
+            print(f"  ❌ Slide {i+1} exception: {e}")
+
+    if not photo_ids:
+        print("  No slides uploaded — falling back to merged image")
+        merged = merge_slides(slides)
+        return post_to_facebook_with_image(page_id, token, merged, caption)
+
+    # Step 2 — Build request body manually (keeps literal brackets, not %5B%5D)
+    parts = []
+    parts.append(f"message={urllib.parse.quote(caption, safe='')}")
+    parts.append(f"access_token={urllib.parse.quote(token, safe='')}")
+    for i, pid in enumerate(photo_ids):
+        val = json.dumps({"media_fbid": pid})
+        parts.append(f"attached_media[{i}]={urllib.parse.quote(val, safe='')}")
+
+    body = "&".join(parts)
+
+    feed_r = requests.post(
+        f"https://graph.facebook.com/v19.0/{page_id}/feed",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30,
+    )
+    feed_data = feed_r.json()
+    print(f"  Feed response: {feed_data}")
+
+    if "id" in feed_data:
+        return {"success": True, "id": feed_data["id"]}
+
+    # Fallback — merged image if carousel fails
+    print(f"  Carousel failed: {feed_data.get('error',{}).get('message','?')} — merged image fallback")
     merged = merge_slides(slides)
-    print(f"  Merged image: {len(merged)//1024}KB")
     return post_to_facebook_with_image(page_id, token, merged, caption)
 
 
