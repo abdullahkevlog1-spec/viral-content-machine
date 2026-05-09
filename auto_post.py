@@ -462,70 +462,64 @@ def post_carousel_to_facebook(page_id: str, token: str,
 
 def post_image_to_facebook(page_id: str, token: str,
                             img_bytes: bytes, caption: str) -> dict:
-    """Single image post — same reliable approach."""
+    """Single image post — uses the reliable photo upload method."""
     return post_to_facebook_with_image(page_id, token, img_bytes, caption)
-    try:
-        r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/feed",
-            data={"message": text, "access_token": token},
-            timeout=15,
-        )
-        data = r.json()
-        if "id" in data:
-            return {"success": True, "id": data["id"]}
-        return {"success": False, "error": data.get("error", {}).get("message", "Unknown")}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    
 
 
-def post_image_to_facebook(page_id: str, token: str, img_bytes: bytes, caption: str) -> dict:
+def commit_log_to_github(entry: dict, gh_token: str, repo: str):
     """
-    Two-step: upload photo unpublished → attach to feed post.
-    Feed post appears in timeline and followers' feeds.
+    Append post result to data/post_log.json in GitHub repo.
+    This creates permanent data trail for self-improvement analysis.
     """
+    if not gh_token or not repo:
+        print("  No GH_PAT — skipping log commit")
+        return
+
+    import base64
+    headers = {
+        "Authorization": f"token {gh_token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{repo}/contents/data/post_log.json"
+
     try:
-        # Step 1 — Upload photo unpublished
-        upload_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            data={"access_token": token, "published": "false"},
-            files={"source": ("post.jpg", img_bytes, "image/jpeg")},
-            timeout=45,
-        )
-        upload_data = upload_r.json()
-        photo_id = upload_data.get("id")
-        print(f"  Photo upload: {photo_id or upload_data}")
+        # Get existing file
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            existing = json.loads(
+                base64.b64decode(r.json()["content"]).decode()
+            )
+            sha = r.json()["sha"]
+        else:
+            existing = []
+            sha = None
 
-        if not photo_id:
-            print("  Photo upload failed — text fallback")
-            return post_text_to_facebook(page_id, token, caption)
+        # Append new entry, keep last 100
+        existing.append(entry)
+        existing = existing[-100:]
 
-        # Step 2 — Attach to feed using form data (NOT json=)
-        feed_r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/feed",
-            data={
-                "message":           caption,
-                "attached_media[0]": f'{{"media_fbid":"{photo_id}"}}',
-                "access_token":      token,
-            },
-            timeout=30,
-        )
-        feed_data = feed_r.json()
-        print(f"  Feed post: {feed_data.get('id') or feed_data}")
+        # Commit
+        content = base64.b64encode(
+            json.dumps(existing, indent=2, ensure_ascii=False).encode()
+        ).decode()
+        data = {
+            "message": f"log: {entry.get('slot', 'post')} {entry.get('time', '')}",
+            "content": content,
+            "branch": "main"
+        }
+        if sha:
+            data["sha"] = sha
 
-        if "id" in feed_data:
-            return {"success": True, "id": feed_data["id"]}
-
-        print("  Feed failed — text fallback")
-        return post_text_to_facebook(page_id, token, caption)
-
+        r2 = requests.put(url, json=data, headers=headers, timeout=15)
+        if r2.status_code in (200, 201):
+            print(f"  ✅ Log committed to GitHub")
+        else:
+            print(f"  Log commit failed: {r2.status_code}")
     except Exception as e:
-        print(f"  Exception: {e}")
-        return post_text_to_facebook(page_id, token, caption)
+        print(f"  Log commit error: {e}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  MAIN
-# ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
 #  TRENDING CONTENT SYSTEM
 # ─────────────────────────────────────────────────────────────────────────────
@@ -666,6 +660,8 @@ def generate_trending_image_prompt(trend: dict, post_text: str, api_key: str) ->
 
 def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
     """Full trending post pipeline — fetch trend → generate → image → post."""
+    from carousel import generate_carousel
+    
     print(f"\n{'='*50}")
     print(f"  🔥 TRENDING AUTO POST")
     print(f"  Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
@@ -727,6 +723,9 @@ def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
         sys.exit(1)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  MAIN
+# ─────────────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--slot", required=True, choices=["morning", "afternoon", "evening", "trending"])
@@ -793,59 +792,7 @@ def main():
         else:
             result = post_text_to_facebook(fb_page, fb_token, text)
 
-def commit_log_to_github(entry: dict, gh_token: str, repo: str):
-    """
-    Append post result to data/post_log.json in GitHub repo.
-    This creates permanent data trail for self-improvement analysis.
-    """
-    if not gh_token or not repo:
-        print("  No GH_PAT — skipping log commit")
-        return
-
-    import base64
-    headers = {
-        "Authorization": f"token {gh_token}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    url = f"https://api.github.com/repos/{repo}/contents/data/post_log.json"
-
-    try:
-        # Get existing file
-        r = requests.get(url, headers=headers, timeout=10)
-        if r.status_code == 200:
-            existing = json.loads(
-                base64.b64decode(r.json()["content"]).decode()
-            )
-            sha = r.json()["sha"]
-        else:
-            existing = []
-            sha = None
-
-        # Append new entry, keep last 100
-        existing.append(entry)
-        existing = existing[-100:]
-
-        # Commit
-        content = base64.b64encode(
-            json.dumps(existing, indent=2, ensure_ascii=False).encode()
-        ).decode()
-        data = {
-            "message": f"log: {entry.get('slot', 'post')} {entry.get('time', '')}",
-            "content": content,
-            "branch": "main"
-        }
-        if sha:
-            data["sha"] = sha
-
-        r2 = requests.put(url, json=data, headers=headers, timeout=15)
-        if r2.status_code in (200, 201):
-            print(f"  ✅ Log committed to GitHub")
-        else:
-            print(f"  Log commit failed: {r2.status_code}")
-    except Exception as e:
-        print(f"  Log commit error: {e}")
-
-
+    # Step 4: Handle results safely
     if result["success"]:
         print(f"\n✅ POSTED SUCCESSFULLY! ID: {result['id']}")
         # Commit log to GitHub for self-improvement tracking
