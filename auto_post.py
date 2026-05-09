@@ -24,6 +24,7 @@ import urllib.parse
 import re
 from datetime import datetime
 from carousel import generate_carousel
+from learning_brain import LearningBrain
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CONFIG — 3 daily slots
