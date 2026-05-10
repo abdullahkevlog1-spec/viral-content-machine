@@ -193,11 +193,18 @@
       display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;
     }
 
+    @media (max-width: 1024px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
     @media (max-width: 900px) {
       .sidebar { display: none; }
       .main { margin-left: 0; padding: 1rem; }
-      .stats-grid { grid-template-columns: 1fr 1fr; }
       .chart-row { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 480px) {
+      .stats-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -207,10 +214,10 @@
 
 <!-- ═══ SIDEBAR ═══ -->
 <aside class="sidebar">
-  <a class="logo" href="#" onclick="navigateTo('dashboard')">
+  <div class="logo">
     <div class="logo-icon">🔥</div>
     <span>Viral Engine</span>
-  </a>
+  </div>
   <nav class="nav">
     <button class="nav-item active" data-page="dashboard">
       <span class="nav-icon">📊</span> Dashboard
@@ -251,7 +258,7 @@
     </div>
   </div>
 
-  <!-- ═══ ERROR BANNER (hidden by default) ═══ -->
+  <!-- ═══ ERROR BANNER ═══ -->
   <div class="error-banner" id="errorBanner" style="display:none;"></div>
 
   <!-- ═══ DASHBOARD PAGE ═══ -->
@@ -281,11 +288,11 @@
     <div class="chart-row">
       <div class="card">
         <div class="card-title">📈 Post Activity (Last 7 Days)</div>
-        <canvas id="lineChart" height="200"></canvas>
+        <div style="height: 200px;"><canvas id="lineChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-title">🎯 Niche Breakdown</div>
-        <canvas id="donutChart" height="200"></canvas>
+        <div style="height: 200px;"><canvas id="donutChart"></canvas></div>
       </div>
     </div>
     <div class="chart-row">
@@ -298,54 +305,25 @@
         <div id="recentLogs" class="activity-list">Loading...</div>
       </div>
     </div>
-    <div style="text-align:right; margin-top:1rem; display:flex; gap:1rem; justify-content:flex-end;">
-      <a class="btn ghost" href="https://github.com/abdullahkevlog1-spec/viral-content-machine" target="_blank" rel="noopener">
-        📁 GitHub Repo
-      </a>
-    </div>
   </section>
 
   <!-- ═══ SCHEDULE PAGE ═══ -->
   <section class="page" id="schedule">
     <div class="card">
-      <div class="card-title">📅 Fixed Daily Schedule (Pakistan Standard Time)</div>
+      <div class="card-title">📅 Daily Schedule (PKT)</div>
       <div id="scheduleDetails" style="display:flex;flex-direction:column;gap:0.8rem;">Loading...</div>
-    </div>
-    <div class="card" style="margin-top:1.5rem;">
-      <div class="card-title">🧠 Self-Improvement Cycles</div>
-      <div class="activity-item">
-        <div class="activity-dot success"></div>
-        <div class="activity-text">8:00 AM — Analysis report generated from post logs</div>
-      </div>
-      <div class="activity-item">
-        <div class="activity-dot success"></div>
-        <div class="activity-text">11:00 PM — Full learning loop: FB metrics → strategy update → report commit</div>
-      </div>
-      <div class="activity-item">
-        <div class="activity-dot success"></div>
-        <div class="activity-text">After each post — Log committed to GitHub automatically</div>
-      </div>
-    </div>
-    <div style="margin-top:1rem;">
-      <a class="btn ghost" href="https://github.com/abdullahkevlog1-spec/viral-content-machine/actions" target="_blank" rel="noopener">
-        ⚙️ View Workflow Runs
-      </a>
     </div>
   </section>
 
   <!-- ═══ ANALYTICS PAGE ═══ -->
   <section class="page" id="analytics">
     <div class="card" style="margin-bottom:1.5rem;">
-      <div class="card-title">🧬 Strategy Weights (Live from GitHub)</div>
-      <div id="strategyDisplay">Loading strategy_state.json...</div>
+      <div class="card-title">🧬 Strategy Weights</div>
+      <div id="strategyDisplay">Loading...</div>
     </div>
     <div class="card">
-      <div class="card-title">📊 Hook Performance (Learned Weights)</div>
-      <canvas id="hookChart" height="200"></canvas>
-    </div>
-    <div class="card" style="margin-top:1.5rem;">
-      <div class="card-title">🤖 AI Suggestions (from latest report)</div>
-      <div id="suggestionsList">Loading...</div>
+      <div class="card-title">📊 Hook Performance</div>
+      <div style="height: 200px;"><canvas id="hookChart"></canvas></div>
     </div>
   </section>
 
@@ -362,99 +340,70 @@
     <div class="card">
       <div class="card-title">⚙️ System Configuration</div>
       <div style="display:flex;flex-direction:column;gap:1rem;color:var(--text-secondary);">
-        <div><strong>Groq API Key:</strong> <code>gsk_***</code> (GitHub Actions Secret)</div>
-        <div><strong>Facebook Page ID:</strong> <code>1078072238724577</code></div>
-        <div><strong>Facebook Page:</strong> AI with Abdullah</div>
-        <div><strong>GitHub Repository:</strong> abdullahkevlog1-spec/viral-content-machine</div>
-      </div>
-      <div style="margin-top:1.5rem; display:flex; gap:1rem; flex-wrap:wrap;">
-        <a class="btn" href="https://github.com/abdullahkevlog1-spec/viral-content-machine/settings/secrets/actions" target="_blank" rel="noopener">
-          🔐 GitHub Secrets
-        </a>
-        <a class="btn ghost" href="https://github.com/abdullahkevlog1-spec/viral-content-machine/settings" target="_blank" rel="noopener">
-          ⚙️ Repo Settings
-        </a>
+        <div><strong>Repo:</strong> <code>abdullahkevlog1-spec/viral-content-machine</code></div>
+        <div><strong>Status:</strong> Automated via GitHub Actions</div>
       </div>
     </div>
   </section>
 </main>
 
 <script>
-// ═══════════════════════════════════════
-// CONFIGURATION
-// ═══════════════════════════════════════
 const GITHUB_REPO = 'abdullahkevlog1-spec/viral-content-machine';
-const RAW_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main`;
-const API_URL = `https://api.github.com/repos/${GITHUB_REPO}`;
+const RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/data`;
 
-// ═══ STATE ═══
 let state = {
   postLog: [],
   report: null,
   strategy: null,
   connected: false,
-  errorMessage: null
+  error: null
 };
 
 // ═══ NAVIGATION ═══
 function navigateTo(pageName) {
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`[data-page="${pageName}"]`);
-  if (btn) btn.classList.add('active');
+  const titles = { dashboard: 'Dashboard', schedule: 'Auto Schedule', analytics: 'Learning Brain', logs: 'Post Logs', settings: 'Settings' };
   
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  const page = document.getElementById(pageName);
-  if (page) page.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.page === pageName);
+  });
+  
+  document.querySelectorAll('.page').forEach(el => {
+    el.classList.toggle('active', el.id === pageName);
+  });
 
-  const titles = {
-    dashboard: 'Dashboard',
-    schedule: 'Auto Schedule',
-    analytics: 'Learning Brain',
-    logs: 'Post Logs',
-    settings: 'Settings'
-  };
-  document.getElementById('greetingText').textContent = titles[pageName] || pageName;
+  document.getElementById('greetingText').textContent = titles[pageName] || 'Dashboard';
 
-  // Refresh respective page
   if (pageName === 'dashboard') refreshDashboard();
   if (pageName === 'analytics') refreshAnalytics();
   if (pageName === 'schedule') renderSchedule();
   if (pageName === 'logs') renderLogs();
 }
 
-document.querySelectorAll('.nav-item').forEach(btn => {
-  btn.addEventListener('click', () => navigateTo(btn.dataset.page));
+document.querySelectorAll('button.nav-item').forEach(btn => {
+  btn.onclick = () => navigateTo(btn.dataset.page);
 });
 
-// ═══ DATA FETCHING ═══
-async function fetchJSON(path) {
+// ═══ DATA ═══
+async function fetchJSON(file) {
   try {
-    const res = await fetch(`${RAW_URL}/${path}?t=${Date.now()}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(`${RAW_BASE}/${file}?t=${Date.now()}`);
+    if (!res.ok) return null;
     return await res.json();
-  } catch (e) {
-    console.warn(`Failed to fetch ${path}:`, e.message);
-    return null;
-  }
+  } catch { return null; }
 }
 
-async function loadAllData() {
-  state.errorMessage = null;
-  document.getElementById('errorBanner').style.display = 'none';
-  
-  const [postLog, report, strategy] = await Promise.all([
-    fetchJSON('data/post_log.json'),
-    fetchJSON('data/report.json'),
-    fetchJSON('data/strategy_state.json')
+async function loadData() {
+  const [logs, rpt, strat] = await Promise.all([
+    fetchJSON('post_log.json'),
+    fetchJSON('report.json'),
+    fetchJSON('strategy_state.json')
   ]);
-
-  state.postLog = postLog || [];
-  state.report = report;
-  state.strategy = strategy;
-  state.connected = !!(postLog || report || strategy);
-
+  
+  state.postLog = Array.isArray(logs) ? logs : [];
+  state.report = rpt;
+  state.strategy = strat;
+  state.connected = (logs !== null || rpt !== null);
   updateStatus();
-  return state.connected;
 }
 
 function updateStatus() {
@@ -462,280 +411,137 @@ function updateStatus() {
   const text = document.getElementById('statusText');
   const msg = document.getElementById('statusMessage');
 
-  if (state.errorMessage) {
-    dot.className = 'pulse-dot offline';
-    text.textContent = 'Error';
-    msg.textContent = state.errorMessage;
-  } else if (state.connected) {
+  if (state.connected) {
     dot.className = 'pulse-dot online';
     text.textContent = 'Live';
-    msg.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+    msg.textContent = `Synced: ${new Date().toLocaleTimeString()}`;
   } else {
-    dot.className = 'pulse-dot loading';
-    text.textContent = 'Connecting...';
-    msg.textContent = 'Trying to reach GitHub...';
+    dot.className = 'pulse-dot error';
+    text.textContent = 'Offline';
+    msg.textContent = 'Sync failed. Repository empty or private.';
   }
 }
 
-// ═══ HELPERS ═══
-function isThisWeek(dateStr) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr + 'Z');
-  if (isNaN(d.getTime())) return false;
-  const now = new Date();
-  const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
-  return d >= weekAgo;
+// ═══ DATE HELPERS ═══
+function parseDate(dStr) {
+  if (!dStr) return new Date(0);
+  return new Date(dStr.includes('T') ? dStr : dStr.replace(' ', 'T') + 'Z');
 }
 
-function isToday(dateStr) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr + 'Z');
-  if (isNaN(d.getTime())) return false;
-  const now = new Date();
-  return d.toDateString() === now.toDateString();
+function isRecent(dStr, days = 7) {
+  const date = parseDate(dStr);
+  const diff = (new Date() - date) / (1000 * 60 * 60 * 24);
+  return diff <= days;
 }
 
-// ═══ DASHBOARD REFRESH ═══
+// ═══ COMPONENTS ═══
 async function refreshDashboard() {
-  await loadAllData();
-  
   const logs = state.postLog;
-  const report = state.report;
-
-  // Stats
-  const totalPosts = logs.length;
-  const thisWeek = logs.filter(l => isThisWeek(l.time)).length;
-  const successCount = logs.filter(l => l.status === 'success').length;
-  const successRate = totalPosts ? Math.round((successCount / totalPosts) * 100) : 0;
-  const avgEngage = report?.facebook?.avg_engagement || 0;
-
-  document.getElementById('statTotal').textContent = totalPosts || '0';
-  document.getElementById('statWeek').textContent = thisWeek || '0';
-  document.getElementById('statSuccess').textContent = successRate + '%';
-  document.getElementById('statEngage').textContent = avgEngage || '0';
-
-  // Line chart
-  const days = [], counts = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const ds = d.toISOString().slice(0, 10);
-    days.push(d.toLocaleDateString('en', { weekday: 'short' }));
-    counts.push(logs.filter(l => (l.time || '').startsWith(ds)).length);
-  }
-  renderLineChart(days, counts);
-
-  // Niche donut
-  const nicheCounts = {};
-  logs.filter(l => l.status === 'success').forEach(l => {
-    const n = l.niche || 'Other';
-    nicheCounts[n] = (nicheCounts[n] || 0) + 1;
-  });
-  renderDonutChart(nicheCounts);
-
-  // Slots
-  const slots = [
-    { time: '9:00 AM', niche: 'AI & Tech', hook: 'Curiosity Gap', lang: 'English' },
-    { time: '2:00 PM', niche: 'Motivation', hook: 'Bold Claim', lang: 'Roman Urdu' },
-    { time: '9:00 PM', niche: 'ASMR', hook: 'Relatable Pain', lang: 'Hinglish' }
-  ];
-  document.getElementById('slotList').innerHTML = slots.map(s => `
-    <div class="slot-card">
-      <div class="slot-time">${s.time}</div>
-      <div>
-        <div class="slot-niche">${s.niche} · ${s.hook}</div>
-        <div class="slot-meta">${s.lang}</div>
-      </div>
-    </div>`).join('');
-
-  // Recent logs
-  const recent = [...logs].reverse().slice(0, 6);
-  document.getElementById('recentLogs').innerHTML = recent.length ? recent.map(l => `
-    <div class="activity-item">
-      <div class="activity-dot ${l.status === 'success' ? 'success' : 'error'}"></div>
-      <div class="activity-text">${l.slot || 'post'} — ${(l.preview || '').slice(0, 50)}</div>
-      <div class="activity-time">${(l.time || '').slice(0, 16)}</div>
-    </div>`).join('') : '<div class="activity-item">No posts yet.</div>';
-}
-
-// ═══ ANALYTICS REFRESH ═══
-async function refreshAnalytics() {
-  if (!state.strategy) await loadAllData();
+  const total = logs.length;
+  const recentCount = logs.filter(l => isRecent(l.time)).length;
+  const success = logs.filter(l => l.status === 'success').length;
   
-  const strategy = state.strategy;
-  const report = state.report;
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statWeek').textContent = recentCount;
+  document.getElementById('statSuccess').textContent = total ? Math.round((success/total)*100) + '%' : '0%';
+  document.getElementById('statEngage').textContent = state.report?.facebook?.avg_engagement || '—';
 
-  // Strategy weights
-  const stratDiv = document.getElementById('strategyDisplay');
-  if (strategy?.hook_weights) {
-    const hooks = Object.entries(strategy.hook_weights).sort((a, b) => b[1] - a[1]);
-    stratDiv.innerHTML = hooks.map(([k, v]) => `
-      <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid rgba(0,0,0,0.03);">
-        <span>${k.replace(/_/g, ' ')}</span>
-        <span style="color:var(--accent);font-weight:600;">${v.toFixed(2)}</span>
-      </div>`).join('');
-    renderHookBarChart(hooks.map(h => h[0]), hooks.map(h => h[1]));
-  } else {
-    stratDiv.innerHTML = '<em>No strategy data available. Run self_improve.py via GitHub Actions first.</em>';
+  // Activity Graph
+  const last7 = [];
+  const counts = [];
+  for(let i=6; i>=0; i--) {
+    let d = new Date(); d.setDate(d.getDate()-i);
+    let ds = d.toISOString().split('T')[0];
+    last7.push(d.toLocaleDateString('en', {weekday:'short'}));
+    counts.push(logs.filter(l => (l.time||'').startsWith(ds)).length);
   }
+  renderLine(last7, counts);
 
-  // Suggestions
-  const sugDiv = document.getElementById('suggestionsList');
-  if (report?.suggestions?.length) {
-    sugDiv.innerHTML = report.suggestions.map((s, i) => `
-      <div class="activity-item">
-        <span style="color:var(--accent);font-weight:600;min-width:30px;">#${i + 1}</span>
-        <div class="activity-text">
-          <strong>${s.problem || ''}</strong><br>
-          <small>${s.suggestion || ''}</small>
-        </div>
-        <span style="font-size:0.7rem;padding:2px 8px;border-radius:50px;background:var(--peach-light);">${s.priority || 'MEDIUM'}</span>
-      </div>`).join('');
-  } else {
-    sugDiv.innerHTML = '<em>No AI suggestions yet. They appear after self_improve.py runs.</em>';
-  }
+  // Niche Donut
+  const countsByNiche = {};
+  logs.forEach(l => { if(l.niche) countsByNiche[l.niche] = (countsByNiche[l.niche] || 0) + 1; });
+  renderDonut(Object.keys(countsByNiche), Object.values(countsByNiche));
+
+  // Activity List
+  const recent = [...logs].reverse().slice(0, 5);
+  document.getElementById('recentLogs').innerHTML = recent.map(l => `
+    <div class="activity-item">
+      <div class="activity-dot ${l.status==='success'?'success':'error'}"></div>
+      <div class="activity-text">${(l.preview || l.topic || 'Post').slice(0,40)}...</div>
+      <div class="activity-time">${(l.time||'').split(' ')[1] || ''}</div>
+    </div>`).join('') || 'No activity';
+
+  document.getElementById('slotList').innerHTML = `
+    <div class="slot-card"><div class="slot-time">09:00</div><div class="slot-niche">AI News (EN)</div></div>
+    <div class="slot-card"><div class="slot-time">14:00</div><div class="slot-niche">Motivation (UR)</div></div>
+    <div class="slot-card"><div class="slot-time">21:00</div><div class="slot-niche">Tech ASMR (HI)</div></div>
+  `;
 }
 
-// ═══ SCHEDULE RENDER ═══
+function refreshAnalytics() {
+  const strat = state.strategy;
+  if (!strat?.hook_weights) {
+    document.getElementById('strategyDisplay').innerHTML = 'No data';
+    return;
+  }
+  const hooks = Object.entries(strat.hook_weights).sort((a,b) => b[1]-a[1]);
+  document.getElementById('strategyDisplay').innerHTML = hooks.map(([k,v]) => `
+    <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid #eee;">
+      <span>${k}</span><b>${v.toFixed(2)}</b>
+    </div>`).join('');
+  renderBar(hooks.map(h=>h[0]), hooks.map(h=>h[1]));
+}
+
 function renderSchedule() {
-  const scheduleData = [
-    { time: '9:00 AM', niche: 'AI & Tech', hook: 'Curiosity Gap', lang: 'English', variation: 'Bold/Controversial' },
-    { time: '2:00 PM', niche: 'Motivation', hook: 'Bold Claim', lang: 'Roman Urdu', variation: 'Bold/Controversial' },
-    { time: '9:00 PM', niche: 'ASMR / Satisfying', hook: 'Relatable Pain', lang: 'Hinglish', variation: 'Emotional' }
+  const slots = [
+    {t: '09:00 AM', n: 'AI Updates', h: 'Curiosity'},
+    {t: '02:00 PM', n: 'Mindset', h: 'Challenge'},
+    {t: '09:00 PM', n: 'Satisfying Tech', h: 'Relatability'}
   ];
-  document.getElementById('scheduleDetails').innerHTML = scheduleData.map(s => `
+  document.getElementById('scheduleDetails').innerHTML = slots.map(s => `
     <div class="slot-card">
-      <div class="slot-time">${s.time}</div>
-      <div>
-        <div class="slot-niche">${s.niche}</div>
-        <div class="slot-meta">${s.hook} · ${s.lang} · ${s.variation}</div>
-      </div>
+      <span class="slot-time">${s.t}</span>
+      <div><b>${s.n}</b><br><small>${s.h} Hook</small></div>
     </div>`).join('');
 }
 
-// ═══ LOGS RENDER ═══
-async function renderLogs() {
-  if (!state.postLog.length) await loadAllData();
+function renderLogs() {
   const logs = [...state.postLog].reverse();
-  document.getElementById('allLogs').innerHTML = logs.length ? logs.map(l => `
+  document.getElementById('allLogs').innerHTML = logs.map(l => `
     <div class="activity-item">
-      <div class="activity-dot ${l.status === 'success' ? 'success' : 'error'}"></div>
-      <div class="activity-text">
-        <strong>${l.slot || 'post'}</strong>
-        ${l.niche ? `· ${l.niche}` : ''}
-        ${l.topic ? `<br><small>${l.topic.slice(0, 60)}</small>` : ''}
-        ${l.error ? `<br><small style="color:var(--error);">${l.error.slice(0, 60)}</small>` : ''}
-        ${l.post_id ? `<br><small style="font-family:monospace;font-size:0.7rem;">ID: ${l.post_id}</small>` : ''}
-      </div>
-      <div class="activity-time">${(l.time || '').slice(0, 16)}</div>
-    </div>`).join('') : '<em>No logs available.</em>';
+      <div class="activity-dot ${l.status==='success'?'success':'error'}"></div>
+      <div style="flex:1;"><b>${l.topic || 'Automated Post'}</b><br><small>${l.time}</small></div>
+    </div>`).join('') || 'Empty logs';
 }
 
-// ═══ CHARTS ═══
-let lineChart, donutChart, hookChart;
-
-function renderLineChart(labels, data) {
-  const ctx = document.getElementById('lineChart')?.getContext('2d');
+// ═══ CHART LIBS ═══
+let c1, c2, c3;
+function renderLine(l, d) {
+  const ctx = document.getElementById('lineChart');
   if (!ctx) return;
-  if (lineChart) lineChart.destroy();
-  lineChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Posts',
-        data,
-        borderColor: '#f7a072',
-        backgroundColor: 'rgba(247,160,114,0.08)',
-        fill: true,
-        tension: 0.4,
-        pointBackgroundColor: '#f7a072',
-        pointRadius: 4
-      }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { stepSize: 1 } },
-        x: { grid: { display: false } }
-      },
-      responsive: true,
-      maintainAspectRatio: false
-    }
-  });
+  if (c1) c1.destroy();
+  c1 = new Chart(ctx, { type:'line', data:{ labels:l, datasets:[{ data:d, borderColor:'#f7a072', tension:0.4, fill:true, backgroundColor:'rgba(247,160,114,0.1)' }] }, options:{ maintainAspectRatio:false, plugins:{legend:{display:false}} }});
 }
-
-function renderDonutChart(nicheMap) {
-  const ctx = document.getElementById('donutChart')?.getContext('2d');
+function renderDonut(l, d) {
+  const ctx = document.getElementById('donutChart');
   if (!ctx) return;
-  if (donutChart) donutChart.destroy();
-  const labels = Object.keys(nicheMap);
-  const data = Object.values(nicheMap);
-  const colors = ['#f7a072', '#e5989b', '#ffdab9', '#b5838d', '#fcd5c4', '#fee9e0'];
-  donutChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels,
-      datasets: [{ data, backgroundColor: colors, borderColor: 'white', borderWidth: 3 }]
-    },
-    options: {
-      plugins: { legend: { position: 'bottom', labels: { color: '#7a685b', padding: 15 } } },
-      responsive: true,
-      maintainAspectRatio: false
-    }
-  });
+  if (c2) c2.destroy();
+  c2 = new Chart(ctx, { type:'doughnut', data:{ labels:l, datasets:[{ data:d, backgroundColor:['#f7a072','#e5989b','#ffdab9'] }] }, options:{ maintainAspectRatio:false }});
 }
-
-function renderHookBarChart(labels, data) {
-  const ctx = document.getElementById('hookChart')?.getContext('2d');
+function renderBar(l, d) {
+  const ctx = document.getElementById('hookChart');
   if (!ctx) return;
-  if (hookChart) hookChart.destroy();
-  hookChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{ label: 'Weight', data, backgroundColor: '#f7a072', borderRadius: 8 }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.04)' } },
-        x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 10 } } }
-      },
-      responsive: true,
-      maintainAspectRatio: false
-    }
-  });
+  if (c3) c3.destroy();
+  c3 = new Chart(ctx, { type:'bar', data:{ labels:l, datasets:[{ data:d, backgroundColor:'#f7a072' }] }, options:{ maintainAspectRatio:false, plugins:{legend:{display:false}} }});
 }
 
-// ═══ GLOBAL REFRESH ═══
-async function refreshAll() {
-  document.getElementById('statusDot').className = 'pulse-dot loading';
-  document.getElementById('statusText').textContent = 'Refreshing...';
-  await loadAllData();
-  await refreshDashboard();
-  updateStatus();
-}
+function refreshAll() { loadData().then(refreshDashboard); }
 
 // ═══ INIT ═══
-async function init() {
-  const connected = await loadAllData();
-  if (!connected) {
-    state.errorMessage = 'Could not fetch data from GitHub. Check your internet connection.';
-    updateStatus();
-  }
-  await refreshDashboard();
-
-  // Auto-refresh every 60 seconds
-  setInterval(async () => {
-    await loadAllData();
-    const activePage = document.querySelector('.page.active');
-    if (activePage?.id === 'dashboard') await refreshDashboard();
-    updateStatus();
-  }, 60000);
-}
-
-init();
+loadData().then(() => {
+  refreshDashboard();
+  setInterval(loadData, 60000);
+});
 </script>
 </body>
 </html>
