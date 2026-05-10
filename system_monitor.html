@@ -1,1 +1,43 @@
-<!DOCTYPE html><html><head><title>System Monitor</title></head><body><h1>AI System Monitor</h1><p>Monitor page added.</p><ul><li>Reads data/post_log.json</li><li>Reads data/report.json</li><li>Reads data/strategy_state.json</li></ul></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Control Center</title>
+<style>
+body{font-family:Arial,sans-serif;background:#0f172a;color:#fff;margin:0;padding:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px}
+.card{background:#1e293b;padding:20px;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.25)}
+h1{margin-bottom:20px}
+small{color:#94a3b8}
+</style>
+</head>
+<body>
+<h1>AI Autonomous System Monitor</h1>
+<div class="grid">
+<div class="card"><h3>Posts</h3><div id="posts">Loading...</div></div>
+<div class="card"><h3>Learning</h3><div id="learning">Loading...</div></div>
+<div class="card"><h3>Trends</h3><div id="trends">Loading...</div></div>
+<div class="card"><h3>Schedule</h3><div id="schedule">Loading...</div></div>
+</div>
+<script>
+async function loadJson(path){
+ try{
+   const res = await fetch(path);
+   return await res.json();
+ }catch(e){ return null; }
+}
+async function init(){
+ const posts = await loadJson('data/post_log.json');
+ const strategy = await loadJson('data/optimized_prompt_profile.json');
+ const trends = await loadJson('data/trends_cache.json');
+ const schedule = await loadJson('data/schedule.json');
+ document.getElementById('posts').innerHTML = posts ? 'Loaded post activity' : 'No data';
+ document.getElementById('learning').innerHTML = strategy ? 'Prompt profile loaded' : 'No data';
+ document.getElementById('trends').innerHTML = trends ? 'Trend cache loaded' : 'No data';
+ document.getElementById('schedule').innerHTML = schedule ? 'Schedule loaded' : 'No data';
+}
+init();
+</script>
+</body>
+</html>
