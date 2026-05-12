@@ -1,69 +1,83 @@
 name: Auto Post — AI with Abdullah
 
 on:
-  schedule:
-    # All times UTC. Pakistan (PKT) = UTC+5
-    # 9:00 AM PKT  = 04:00 UTC
-    - cron: '0 4 * * *'
-    # 11:00 AM PKT = 06:00 UTC  ← Trending post
-    - cron: '0 6 * * *'
-    # 2:00 PM PKT  = 09:00 UTC
-    - cron: '0 9 * * *'
-    # 9:00 PM PKT  = 16:00 UTC
-    - cron: '0 16 * * *'
+schedule:
+- cron: '0 4 * * *'
+- cron: '0 6 * * *'
+- cron: '0 9 * * *'
+- cron: '0 16 * * *'
 
-  workflow_dispatch:
-    inputs:
-      slot:
-        description: 'Which slot to post'
-        required: true
-        default: 'morning'
-        type: choice
-        options:
-          - morning
-          - trending
-          - afternoon
-          - evening
+workflow_dispatch:
+inputs:
+slot:
+description: 'Which slot to post'
+required: true
+default: 'morning'
+type: choice
+options:
+- morning
+- trending
+- afternoon
+- evening
 
 jobs:
-  post:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+post:
+runs-on: ubuntu-latest
+timeout-minutes: 10
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+```
+steps:
+  - name: Checkout repo
+    uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+  - name: Set up Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install requests Pillow pytrends
+  - name: Install dependencies
+    run: pip install requests Pillow pytrends
 
-      - name: Determine slot from cron time
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "SLOT=${{ inputs.slot }}" >> $GITHUB_ENV
-          else
-            HOUR=$(date -u +%H)
-            if [ "$HOUR" = "04" ]; then
-              echo "SLOT=morning" >> $GITHUB_ENV
-            elif [ "$HOUR" = "06" ]; then
-              echo "SLOT=trending" >> $GITHUB_ENV
-            elif [ "$HOUR" = "09" ]; then
-              echo "SLOT=afternoon" >> $GITHUB_ENV
-            else
-              echo "SLOT=evening" >> $GITHUB_ENV
-            fi
-          fi
+  - name: Determine slot from cron time
+    run: |
+      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+        echo "SLOT=${{ inputs.slot }}" >> $GITHUB_ENV
+      else
+        HOUR=$(date -u +%H)
+        if [ "$HOUR" = "04" ]; then
+          echo "SLOT=morning" >> $GITHUB_ENV
+        elif [ "$HOUR" = "06" ]; then
+          echo "SLOT=trending" >> $GITHUB_ENV
+        elif [ "$HOUR" = "09" ]; then
+          echo "SLOT=afternoon" >> $GITHUB_ENV
+        else
+          echo "SLOT=evening" >> $GITHUB_ENV
+        fi
+      fi
 
-      - name: Run auto post
-        env:
-          GROQ_API_KEY:  ${{ secrets.GROQ_API_KEY }}
-          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-          FB_PAGE_ID:    ${{ secrets.FB_PAGE_ID }}
-          GH_PAT:        ${{ secrets.GH_PAT }}
-          GITHUB_REPO:   abdullahkevlog1-spec/viral-content-machine
-        run: python auto_post.py --slot $SLOT
+  - name: Run auto post
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+      FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+      GITHUB_REPO: abdullahkevlog1-spec/viral-content-machine
+    run: python auto_post.py --slot $SLOT
+
+  - name: Update actions status
+    run: python update_actions_status.py
+
+  - name: Update FB analytics
+    run: python update_fb_analytics.py
+
+  - name: Update strategy state
+    run: python update_strategy_state.py
+
+  - name: Commit monitor updates
+    run: |
+      git config --global user.name "github-actions"
+      git config --global user.email "github-actions@github.com"
+      git add data/*.json
+      git commit -m "Auto update monitor data" || echo "No changes to commit"
+      git push
+```
