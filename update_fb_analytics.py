@@ -8,14 +8,11 @@ DATA_DIR.mkdir(exist_ok=True)
 
 TOKEN = os.getenv("FB_PAGE_TOKEN")
 PAGE_ID = os.getenv("FB_PAGE_ID")
-
 OUTPUT_FILE = DATA_DIR / "fb_analytics.json"
 
 def safe_write(data):
-OUTPUT_FILE.write_text(
-json.dumps(data, indent=2),
-encoding="utf-8"
-)
+with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+json.dump(data, f, indent=2)
 
 def get_latest_post():
 url = f"https://graph.facebook.com/v23.0/{PAGE_ID}/posts"
@@ -26,10 +23,10 @@ params = {
 }
 
 ```
-res = requests.get(url, params=params, timeout=30)
-data = res.json()
+response = requests.get(url, params=params, timeout=30)
+result = response.json()
 
-posts = data.get("data", [])
+posts = result.get("data", [])
 if not posts:
     return None
 
@@ -44,12 +41,12 @@ params = {
 }
 
 ```
-res = requests.get(url, params=params, timeout=30)
-data = res.json()
+response = requests.get(url, params=params, timeout=30)
+result = response.json()
 
-likes = data.get("likes", {}).get("summary", {}).get("total_count", 0)
-comments = data.get("comments", {}).get("summary", {}).get("total_count", 0)
-shares = data.get("shares", {}).get("count", 0)
+likes = result.get("likes", {}).get("summary", {}).get("total_count", 0)
+comments = result.get("comments", {}).get("summary", {}).get("total_count", 0)
+shares = result.get("shares", {}).get("count", 0)
 
 score = likes + (comments * 3) + (shares * 2)
 
@@ -63,14 +60,14 @@ return {
 
 def main():
 if not TOKEN or not PAGE_ID:
-safe_write({"error": "Missing FB credentials"})
+safe_write({"error": "Missing credentials"})
 return
 
 ```
 try:
-    latest = get_latest_post()
+    latest_post = get_latest_post()
 
-    if not latest:
+    if not latest_post:
         safe_write({
             "likes": 0,
             "comments": 0,
@@ -79,7 +76,7 @@ try:
         })
         return
 
-    metrics = get_post_metrics(latest["id"])
+    metrics = get_post_metrics(latest_post["id"])
     safe_write(metrics)
 
 except Exception as e:
