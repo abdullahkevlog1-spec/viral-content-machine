@@ -12,7 +12,10 @@ PAGE_ID = os.getenv("FB_PAGE_ID")
 OUTPUT_FILE = DATA_DIR / "fb_analytics.json"
 
 def safe_write(data):
-OUTPUT_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+OUTPUT_FILE.write_text(
+json.dumps(data, indent=2),
+encoding="utf-8"
+)
 
 def get_latest_post():
 url = f"https://graph.facebook.com/v23.0/{PAGE_ID}/posts"
@@ -29,6 +32,7 @@ data = res.json()
 posts = data.get("data", [])
 if not posts:
     return None
+
 return posts[0]
 ```
 
@@ -59,9 +63,7 @@ return {
 
 def main():
 if not TOKEN or not PAGE_ID:
-safe_write({
-"error": "Missing FB credentials"
-})
+safe_write({"error": "Missing FB credentials"})
 return
 
 ```
@@ -81,9 +83,7 @@ try:
     safe_write(metrics)
 
 except Exception as e:
-    safe_write({
-        "error": str(e)
-    })
+    safe_write({"error": str(e)})
 ```
 
 if **name** == "**main**":
