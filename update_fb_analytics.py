@@ -4,87 +4,60 @@ import requests
 
 TOKEN = os.getenv("FB_PAGE_TOKEN")
 PAGE_ID = os.getenv("FB_PAGE_ID")
+OUTPUT_PATH = "data/fb_analytics.json"
+
 
 def main():
-output_path = "data/fb_analytics.json"
+    os.makedirs("data", exist_ok=True)
 
-```
-if not TOKEN or not PAGE_ID:
-    data = {"error": "Missing credentials"}
-else:
-    try:
-        post_url = f"https://graph.facebook.com/v23.0/{PAGE_ID}/posts"
-        post_params = {
-            "access_token": TOKEN,
-            "limit": 1,
-            "fields": "id"
-        }
-
-        post_response = requests.get(post_url, params=post_params, timeout=30)
-        post_json = post_response.json()
-
-        posts = post_json.get("data", [])
-
-        if not posts:
-            data = {
-                "likes": 0,
-                "comments": 0,
-                "shares": 0,
-                "score": 0
-            }
-        else:
-            post_id = posts[0]["id"]
-
-            metrics_url = f"https://graph.facebook.com/v23.0/{post_id}"
-            metrics_params = {
+    if not TOKEN or not PAGE_ID:
+        data = {"error": "Missing credentials"}
+    else:
+        try:
+            post_url = f"https://graph.facebook.com/v23.0/{PAGE_ID}/posts"
+            post_params = {
                 "access_token": TOKEN,
-                "fields": "likes.summary(true),comments.summary(true),shares"
+                "limit": 1,
+                "fields": "id"
             }
 
-            metrics_response = requests.get(
-                metrics_url,
-                params=metrics_params,
-                timeout=30
-            )
-            metrics_json = metrics_response.json()
+            post_response = requests.get(post_url, params=post_params, timeout=30)
+            post_json = post_response.json()
+            posts = post_json.get("data", [])
 
-            likes = metrics_json.get(
-                "likes", {}
-            ).get(
-                "summary", {}
-            ).get(
-                "total_count", 0
-            )
+            if not posts:
+                data = {"likes": 0, "comments": 0, "shares": 0, "score": 0}
+            else:
+                post_id = posts[0]["id"]
+                metrics_url = f"https://graph.facebook.com/v23.0/{post_id}"
+                metrics_params = {
+                    "access_token": TOKEN,
+                    "fields": "likes.summary(true),comments.summary(true),shares"
+                }
 
-            comments = metrics_json.get(
-                "comments", {}
-            ).get(
-                "summary", {}
-            ).get(
-                "total_count", 0
-            )
+                metrics_response = requests.get(metrics_url, params=metrics_params, timeout=30)
+                metrics_json = metrics_response.json()
 
-            shares = metrics_json.get(
-                "shares", {}
-            ).get(
-                "count", 0
-            )
+                likes = metrics_json.get("likes", {}).get("summary", {}).get("total_count", 0)
+                comments = metrics_json.get("comments", {}).get("summary", {}).get("total_count", 0)
+                shares = metrics_json.get("shares", {}).get("count", 0)
+                score = likes + (comments * 3) + (shares * 2)
 
-            score = likes + (comments * 3) + (shares * 2)
+                data = {
+                    "likes": likes,
+                    "comments": comments,
+                    "shares": shares,
+                    "score": score
+                }
 
-            data = {
-                "likes": likes,
-                "comments": comments,
-                "shares": shares,
-                "score": score
-            }
+        except Exception as e:
+            data = {"error": str(e)}
 
-    except Exception as e:
-        data = {"error": str(e)}
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
 
-with open(output_path, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2)
-```
+    print("fb_analytics.json updated")
 
-if **name** == "**main**":
-main()
+
+if __name__ == "__main__":
+    main()
