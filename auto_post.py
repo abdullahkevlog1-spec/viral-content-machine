@@ -1,529 +1,64 @@
 """
-auto_post.py — Standalone scheduler for GitHub Actions
-Runs independently of Streamlit. No UI needed.
-Called by .github/workflows/auto_post.yml on cron schedule.
+auto_post.py — Standalone scheduler for GitHub Actions.
 
-Usage:
-    python auto_post.py --slot morning    # 9 AM post
-    python auto_post.py --slot afternoon  # 2 PM post
-    python auto_post.py --slot evening    # 9 PM post
-
-Secrets required (GitHub Actions Secrets):
-    GROQ_API_KEY       — from console.groq.com
-    FB_PAGE_TOKEN      — Facebook Page Access Token
-    FB_PAGE_ID         — Facebook Page ID
+Regular auto-post slots now use engine.py as the single source of truth for:
+- hooks
+- niche profiles
+- prompt generation
+- anti-generic quality checks
+- image generation fallback
 """
 
-import os
-import sys
-import json
-import random
 import argparse
-import requests
-import urllib.parse
+import json
+import os
+import random
 import re
+import sys
 from datetime import datetime
-from carousel import generate_carousel
-from learning_brain import LearningBrain
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  CONFIG — 3 daily slots
-# ─────────────────────────────────────────────────────────────────────────────
+import requests
+
+from carousel import generate_carousel
+from engine import (
+    generate_single,
+    generate_and_download_image,
+    get_hook_by_id,
+    is_generic,
+    is_too_short,
+    post_image_to_facebook as engine_post_image_to_facebook,
+)
+
 SLOTS = {
     "morning": {
-        "label":     "🌅 Subah 9:00 AM",
-        "niche":     "AI & Tech",
-        "hook_id":   "curiosity",
-        "tone":      7,
+        "label": "🌅 Subah 9:00 AM",
+        "niche": "AI & Tech",
+        "hook_id": "curiosity",
+        "tone": 7,
         "variation": "Bold/Controversial",
-        "language":  "English",
+        "language": "English",
     },
     "afternoon": {
-        "label":     "☀️ Dopahar 2:00 PM",
-        "niche":     "Motivation",
-        "hook_id":   "bold_claim",
-        "tone":      8,
+        "label": "☀️ Dopahar 2:00 PM",
+        "niche": "Motivation",
+        "hook_id": "bold_claim",
+        "tone": 8,
         "variation": "Bold/Controversial",
-        "language":  "Roman Urdu",
+        "language": "Roman Urdu",
     },
     "evening": {
-        "label":     "🌙 Raat 9:00 PM",
-        "niche":     "ASMR / Satisfying",
-        "hook_id":   "relatable_pain",
-        "tone":      5,
+        "label": "🌙 Raat 9:00 PM",
+        "niche": "ASMR / Satisfying",
+        "hook_id": "relatable_pain",
+        "tone": 5,
         "variation": "Emotional",
-        "language":  "Hinglish",
+        "language": "Hinglish",
     },
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  GROQ CONFIG
-# ─────────────────────────────────────────────────────────────────────────────
-GROQ_MODEL   = "llama-3.3-70b-versatile"
+GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-
-HOOKS = {
-    "curiosity":       {"name": "🔍 Curiosity Gap",       "psychology": "Brain is compelled to close open information loops"},
-    "bold_claim":      {"name": "⚡ Bold Claim",           "psychology": "Pattern interrupt forces the brain to stop scrolling"},
-    "relatable_pain":  {"name": "💔 Relatable Pain",      "psychology": "Mirror neurons fire when people feel deeply understood"},
-    "controversy":     {"name": "🔥 Controversy",         "psychology": "Challenges beliefs, triggers debate and strong reactions"},
-    "fear_loss":       {"name": "😨 Fear / Loss",         "psychology": "Loss aversion is 2x stronger than desire to gain"},
-    "authority_data":  {"name": "🎓 Authority + Data",    "psychology": "Authority bias boosts credibility instantly"},
-    "story_hook":      {"name": "📖 Story Hook",          "psychology": "Humans are wired to follow narrative arcs"},
-    "shocking_stat":   {"name": "📊 Shocking Statistic",  "psychology": "Creates social comparison and urgency"},
-}
-
-LANGUAGE_INSTRUCTIONS = {
-    "English": "Write the ENTIRE post in clear, punchy English.",
-    "Roman Urdu": """Write the ENTIRE post in Roman Urdu (Urdu words written in English letters).
-Example: "Yaar, kya tumne kabhi socha hai ke AI tera kaam chheen sakti hai?"
-Every word must be Roman Urdu. Do NOT mix English sentences.""",
-    "Hinglish": """Write the ENTIRE post in Hinglish (natural Hindi/Urdu + English mix).
-Example: "Bhai, AI ne seriously sab kuch change kar diya hai."
-Sound like a smart Pakistani/Indian friend texting.""",
-}
-
-NICHE_HASHTAGS = {
-    "AI & Tech":         "#AI #ArtificialIntelligence #Tech #ChatGPT #MachineLearning",
-    "Motivation":        "#Motivation #Success #Pakistan #Growth #Mindset",
-    "ASMR / Satisfying": "#ASMR #Satisfying #Relaxing #Aesthetic #Vibes",
-}
-
-BANNED_PHRASES = [
-    "stay motivated", "work hard every day", "never give up", "believe in yourself",
-    "just keep going", "you can do it", "dream big", "hustle every day",
-    "be positive", "success is a journey", "be the best version of yourself",
-    "in today's world", "game changer", "think outside the box",
-    "the future is bright", "most people don't realize", "it's no secret",
-    "at the end of the day", "as we all know",
-]
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  CONTENT FRAMEWORKS — Rotate for variety
-# ─────────────────────────────────────────────────────────────────────────────
-CONTENT_FRAMEWORKS = [
-    {"name": "Confession",       "structure": "Personal confession → why it matters → question to reader"},
-    {"name": "Myth vs Reality",  "structure": "State common myth → destroy with specific fact → reveal truth"},
-    {"name": "Before/After",     "structure": "Stark transformation → specific turning point → how reader can do it"},
-    {"name": "Unpopular Opinion","structure": "Bold opinion → 2-3 specific reasons → invite debate"},
-    {"name": "Behind The Scenes","structure": "Reveal hidden truth → insider knowledge → make reader feel special"},
-    {"name": "The Mistake",      "structure": "Specific mistake → what went wrong → clear lesson extracted"},
-    {"name": "Numbered Reveal",  "structure": "3 specific surprising insights → build to best one last"},
-    {"name": "Sensory Story",    "structure": "Vivid sensory scene → sounds textures smells → transport reader"},
-    {"name": "What Nobody Says", "structure": "What everyone thinks → what nobody says out loud → the truth"},
-    {"name": "Time Machine",     "structure": "You from 5 years ago → what changed → message to your past self"},
-]
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  CONTENT GENERATION
-# ─────────────────────────────────────────────────────────────────────────────
-def build_prompt(slot: dict) -> str:
-    hook      = HOOKS.get(slot["hook_id"], HOOKS["curiosity"])
-    lang_ins  = LANGUAGE_INSTRUCTIONS.get(slot["language"], LANGUAGE_INSTRUCTIONS["English"])
-    hashtags  = NICHE_HASHTAGS.get(slot["niche"], "#Pakistan #AI #Tech")
-    niche     = slot["niche"]
-    variation = slot["variation"]
-    tone      = slot["tone"]
-    framework = random.choice(CONTENT_FRAMEWORKS)
-
-    length_guide = {
-        "Emotional":          "180-250 words. Deep, personal, emotional story.",
-        "Educational":        "220-300 words. Specific, actionable, real examples.",
-        "Bold/Controversial": "100-160 words. Short punchy lines. Every word hits hard.",
-    }.get(variation, "180-250 words.")
-
-    niche_specifics = {
-        "AI & Tech":         "Name SPECIFIC tools: ChatGPT-4o, Gemini 1.5 Pro, Claude 3.5, Midjourney V6, Sora, Copilot. Real numbers. Real impact.",
-        "Motivation":        "REAL Pakistan scenarios: raat 2 baje akele kaam, parents ki umeedein, peer pressure, rejection letter, failed exam.",
-        "ASMR / Satisfying": "SPECIFIC sensory: kinetic sand texture under fingers, soap bar crunch sound, slime stretching pop, rain drops on window glass.",
-        "News & Trends":     "SPECIFIC: what happened exactly, who, when, why Pakistani audience should care RIGHT NOW.",
-    }.get(niche, "Be hyper-specific. Name real things. No vague statements allowed.")
-
-    return f"""You are Pakistan's #1 viral Facebook creator. Posts feel human, raw, real.
-
-LANGUAGE (non-negotiable): {lang_ins}
-NICHE: {niche}
-SPECIFICS: {niche_specifics}
-HOOK: {hook['name']} psychology — {hook['psychology']}
-VARIATION: {variation}
-TONE: {tone}/10 {"= aggressive, polarizing, debate-starting" if tone >= 7 else "= warm, personal, intimate" if tone <= 4 else "= confident, direct, bold"}
-LENGTH: {length_guide}
-
-USE THIS FRAMEWORK: {framework['name']}
-Structure: {framework['structure']}
-
-POST FORMAT — blank line between each section:
-[HOOK — 1-2 lines: scroll-stopper using {hook['name']} psychology]
-
-[BODY — specific, deep, varied sentences. Real details, real feelings]
-
-[PUNCH — the one line people screenshot]
-
-[CTA + hashtags: {hashtags}]
-
-HARD RULES:
-1. Return ONLY post text. Zero labels. Zero preamble.
-2. BANNED: "stay motivated" "work hard" "believe in yourself" "never give up" "dream big"
-   "in today's world" "game changer" "think outside the box" "most people don't realize"
-3. NEVER start with: "In today's" "The truth is" "Most people" "As we all know"
-4. Max 12 words per line
-5. 3-5 emojis naturally placed
-6. Framework MUST be clearly visible in structure — not just surface level
-7. Every post must feel like a DIFFERENT person wrote it from last post
-
-Write now:"""
-def is_generic(text: str) -> bool:
-    t = text.lower()
-    return any(p in t for p in BANNED_PHRASES)
-
-
-def is_too_short(text: str) -> bool:
-    return len(text.strip()) < 150
-
-
-def generate_post(slot: dict, api_key: str, max_retries: int = 4) -> str | None:
-    for attempt in range(max_retries):
-        temp = round(0.82 + attempt * 0.07, 2)
-        try:
-            r = requests.post(
-                GROQ_API_URL,
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": [{"role": "user", "content": build_prompt(slot)}],
-                    "temperature": temp,
-                    "max_tokens": 600,
-                    "top_p": 0.92,
-                },
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=30,
-            )
-            if r.status_code != 200:
-                print(f"  Groq error {r.status_code}: {r.text[:100]}")
-                continue
-            text = r.json()["choices"][0]["message"]["content"].strip()
-            if is_too_short(text):
-                print(f"  Attempt {attempt+1}: too short ({len(text)} chars) — retrying")
-                continue
-            if is_generic(text):
-                print(f"  Attempt {attempt+1}: generic detected — retrying")
-                continue
-            return text
-        except Exception as e:
-            print(f"  Attempt {attempt+1} exception: {e}")
-    return None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  IMAGE GENERATION
-# ─────────────────────────────────────────────────────────────────────────────
-NICHE_BASE_STYLES = {
-    "AI & Tech":         "cinematic close-up of glowing holographic AI brain, deep space background, neon blue purple light rays, ultra detailed 8k, dramatic shadows, no text",
-    "Motivation":        "cinematic portrait of determined person standing at cliff edge at sunset, golden hour god rays, silhouette against burning sky, ultra realistic 8k, no text",
-    "ASMR / Satisfying": "extreme macro close-up of iridescent liquid mercury droplets on black surface, rainbow caustics, studio lighting, ultra sharp 8k, perfectly symmetrical, no text",
-}
-
-
-def generate_image_prompt(niche: str, post_text: str, api_key: str) -> str:
-    clean = re.sub(r"#\w+", "", post_text)
-    clean = re.sub(r"[^\x00-\x7F]+", "", clean).strip()[:250]
-    base  = NICHE_BASE_STYLES.get(niche, "cinematic dramatic professional photography, 8k")
-
-    try:
-        r = requests.post(
-            GROQ_API_URL,
-            json={
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": "You are an AI image prompt engineer. Write ONE ultra-specific Stable Diffusion image prompt. Max 80 words. No text/words in image. Return ONLY the prompt."},
-                    {"role": "user", "content": f"Niche: {niche}\nPost: {clean}\nStyle: {base}\n\nWrite prompt:"},
-                ],
-                "temperature": 0.7,
-                "max_tokens": 120,
-            },
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            timeout=15,
-        )
-        if r.status_code == 200:
-            prompt = r.json()["choices"][0]["message"]["content"].strip()
-            if "no text" not in prompt.lower():
-                prompt += ", no text, no words, photorealistic"
-            return prompt
-    except Exception:
-        pass
-    return f"{base}, no text, no words, photorealistic, 8k"
-
-
-def add_text_overlay(img_bytes: bytes, post_text: str, page_name: str = "AI with Abdullah") -> bytes:
-    """Add hook text + watermark overlay on image using Pillow."""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        import io, textwrap, re
-
-        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-        w, h = img.size
-
-        lines = [l.strip() for l in post_text.split("\n") if l.strip()]
-        hook = lines[0] if lines else ""
-        hook = re.sub(r"#\w+", "", hook).strip()
-        hook = re.sub(r"[^\x00-\x7F]+", " ", hook).strip()
-        if len(hook) > 70:
-            hook = hook[:67] + "..."
-
-        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        draw_ov  = ImageDraw.Draw(overlay)
-        grad_h   = int(h * 0.45)
-        for i in range(grad_h):
-            alpha = int(210 * (i / grad_h))
-            draw_ov.line([(0, h - grad_h + i), (w, h - grad_h + i)], fill=(0, 0, 0, alpha))
-        img = Image.alpha_composite(img, overlay)
-        draw = ImageDraw.Draw(img)
-
-        fs_hook = max(36, w // 22)
-        fs_wm   = max(18, w // 55)
-        try:
-            font_hook = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs_hook)
-            font_wm   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", fs_wm)
-        except Exception:
-            font_hook = ImageFont.load_default()
-            font_wm   = ImageFont.load_default()
-
-        wrapped = textwrap.fill(hook, width=max(20, w // (fs_hook // 2))).split("\n")
-        line_h  = fs_hook + 10
-        text_y  = h - len(wrapped) * line_h - int(h * 0.07)
-        for line in wrapped:
-            bbox   = draw.textbbox((0, 0), line, font=font_hook)
-            text_w = bbox[2] - bbox[0]
-            x = (w - text_w) // 2
-            draw.text((x + 3, text_y + 3), line, font=font_hook, fill=(0, 0, 0, 180))
-            draw.text((x, text_y), line, font=font_hook, fill=(255, 255, 255, 255))
-            text_y += line_h
-
-        wm_bbox = draw.textbbox((0, 0), page_name, font=font_wm)
-        draw.text((w - (wm_bbox[2] - wm_bbox[0]) - 20, h - fs_wm - 15), page_name, font=font_wm, fill=(255, 255, 255, 160))
-
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, format="JPEG", quality=92)
-        return buf.getvalue()
-    except Exception as e:
-        print(f"  Overlay failed: {e}")
-        return img_bytes
-
-
-def download_image(niche: str, post_text: str, api_key: str) -> bytes | None:
-    prompt  = generate_image_prompt(niche, post_text, api_key)
-    encoded = urllib.parse.quote(prompt)
-    seed    = random.randint(1, 999999)
-    url     = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true&model=flux&seed={seed}"
-    print(f"  Image prompt: {prompt[:80]}...")
-    try:
-        r = requests.get(url, timeout=60)
-        if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
-            raw = r.content
-            print(f"  Image downloaded: {len(raw)//1024}KB — applying overlay...")
-            return add_text_overlay(raw, post_text)
-    except Exception as e:
-        print(f"  Image download failed: {e}")
-    return None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  FACEBOOK POSTING
-# ─────────────────────────────────────────────────────────────────────────────
-def merge_slides(slides: list) -> bytes:
-    """
-    Merge 3 carousel slides into ONE tall image (1080 x 3240).
-    This avoids the attached_media bracket-encoding bug entirely.
-    One image = one clean timeline post.
-    """
-    from PIL import Image
-    import io
-
-    images = []
-    for s in slides:
-        try:
-            img = Image.open(io.BytesIO(s)).convert("RGB")
-            # Ensure all slides are same width
-            if img.width != 1080:
-                img = img.resize((1080, 1080), Image.LANCZOS)
-            images.append(img)
-        except Exception as e:
-            print(f"  Slide merge warning: {e}")
-
-    if not images:
-        return slides[0] if slides else b""
-
-    # Stack vertically
-    total_h = sum(img.height for img in images)
-    merged  = Image.new("RGB", (1080, total_h), (13, 13, 13))
-    y = 0
-    for img in images:
-        merged.paste(img, (0, y))
-        y += img.height
-
-    buf = io.BytesIO()
-    merged.save(buf, format="JPEG", quality=90)
-    return buf.getvalue()
-
-
-def post_to_facebook_with_image(page_id: str, token: str,
-                                 img_bytes: bytes, caption: str) -> dict:
-    """
-    THE ONLY RELIABLE WAY to post image to Facebook timeline.
-    Uses /photos with published=true — creates timeline post + visible in feed.
-    No attached_media, no bracket encoding bugs.
-    """
-    try:
-        r = requests.post(
-            f"https://graph.facebook.com/v19.0/{page_id}/photos",
-            data={
-                "caption":      caption,
-                "access_token": token,
-                "published":    "true",
-            },
-            files={"source": ("post.jpg", img_bytes, "image/jpeg")},
-            timeout=60,
-        )
-        data = r.json()
-        print(f"  FB response: {data}")
-
-        if "id" in data or "post_id" in data:
-            return {"success": True,
-                    "id": data.get("post_id", data.get("id"))}
-
-        err = data.get("error", {}).get("message", str(data))
-        return {"success": False, "error": err}
-
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-def post_carousel_to_facebook(page_id: str, token: str,
-                               slides: list, caption: str) -> dict:
-    """
-    Post 3-slide carousel to Facebook feed.
-    Builds request body manually to avoid urllib bracket-encoding bug.
-    App must be in Live mode for this to work.
-    """
-    import urllib.parse
-
-    # Step 1 — Upload each slide as unpublished photo
-    photo_ids = []
-    for i, img_bytes in enumerate(slides):
-        try:
-            r = requests.post(
-                f"https://graph.facebook.com/v19.0/{page_id}/photos",
-                data={"access_token": token, "published": "false"},
-                files={"source": (f"slide_{i+1}.jpg", img_bytes, "image/jpeg")},
-                timeout=45,
-            )
-            pid = r.json().get("id")
-            if pid:
-                photo_ids.append(pid)
-                print(f"  ✅ Slide {i+1} uploaded: {pid}")
-            else:
-                print(f"  ❌ Slide {i+1} failed: {r.json()}")
-        except Exception as e:
-            print(f"  ❌ Slide {i+1} exception: {e}")
-
-    if not photo_ids:
-        print("  No slides uploaded — falling back to merged image")
-        merged = merge_slides(slides)
-        return post_to_facebook_with_image(page_id, token, merged, caption)
-
-    # Step 2 — Build request body manually (keeps literal brackets, not %5B%5D)
-    parts = []
-    parts.append(f"message={urllib.parse.quote(caption, safe='')}")
-    parts.append(f"access_token={urllib.parse.quote(token, safe='')}")
-    for i, pid in enumerate(photo_ids):
-        val = json.dumps({"media_fbid": pid})
-        parts.append(f"attached_media[{i}]={urllib.parse.quote(val, safe='')}")
-
-    body = "&".join(parts)
-
-    feed_r = requests.post(
-        f"https://graph.facebook.com/v19.0/{page_id}/feed",
-        data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=30,
-    )
-    feed_data = feed_r.json()
-    print(f"  Feed response: {feed_data}")
-
-    if "id" in feed_data:
-        return {"success": True, "id": feed_data["id"]}
-
-    # Fallback — merged image if carousel fails
-    print(f"  Carousel failed: {feed_data.get('error',{}).get('message','?')} — merged image fallback")
-    merged = merge_slides(slides)
-    return post_to_facebook_with_image(page_id, token, merged, caption)
-
-
-def post_image_to_facebook(page_id: str, token: str,
-                            img_bytes: bytes, caption: str) -> dict:
-    """Single image post — uses the reliable photo upload method."""
-    return post_to_facebook_with_image(page_id, token, img_bytes, caption)
-    
-
-
-def commit_log_to_github(entry: dict, gh_token: str, repo: str):
-    """
-    Append post result to data/post_log.json in GitHub repo.
-    This creates permanent data trail for self-improvement analysis.
-    """
-    if not gh_token or not repo:
-        print("  No GH_PAT — skipping log commit")
-        return
-
-    import base64
-    headers = {
-        "Authorization": f"token {gh_token}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    url = f"https://api.github.com/repos/{repo}/contents/data/post_log.json"
-
-    try:
-        # Get existing file
-        r = requests.get(url, headers=headers, timeout=10)
-        if r.status_code == 200:
-            existing = json.loads(
-                base64.b64decode(r.json()["content"]).decode()
-            )
-            sha = r.json()["sha"]
-        else:
-            existing = []
-            sha = None
-
-        # Append new entry, keep last 100
-        existing.append(entry)
-        existing = existing[-100:]
-
-        # Commit
-        content = base64.b64encode(
-            json.dumps(existing, indent=2, ensure_ascii=False).encode()
-        ).decode()
-        data = {
-            "message": f"log: {entry.get('slot', 'post')} {entry.get('time', '')}",
-            "content": content,
-            "branch": "main"
-        }
-        if sha:
-            data["sha"] = sha
-
-        r2 = requests.put(url, json=data, headers=headers, timeout=15)
-        if r2.status_code in (200, 201):
-            print(f"  ✅ Log committed to GitHub")
-        else:
-            print(f"  Log commit failed: {r2.status_code}")
-    except Exception as e:
-        print(f"  Log commit error: {e}")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  TRENDING CONTENT SYSTEM
-# ─────────────────────────────────────────────────────────────────────────────
+GRAPH_VERSION = os.getenv("FB_GRAPH_VERSION", "v19.0")
 
 PAKISTAN_NEWS_FEEDS = [
     "https://www.dawn.com/feeds/home",
@@ -541,70 +76,227 @@ TRENDING_TOPICS_FALLBACK = [
 ]
 
 
+def generate_post(slot: dict, api_key: str) -> str | None:
+    hook = get_hook_by_id(slot["hook_id"])
+    result = generate_single(
+        niche=slot["niche"],
+        hook_style=hook,
+        variation=slot["variation"],
+        tone_level=slot["tone"],
+        api_key=api_key,
+        max_retries=4,
+        language=slot.get("language", "English"),
+    )
+
+    if result.get("error"):
+        print(f"  Engine error: {result['error']}")
+        return None
+
+    text = (result.get("text") or "").strip()
+    if not text:
+        print("  Engine returned empty text")
+        return None
+
+    if result.get("flagged_generic"):
+        print("  Warning: engine flagged output as generic after retries")
+
+    return text
+
+
+def post_text_to_facebook(page_id: str, token: str, message: str) -> dict:
+    try:
+        r = requests.post(
+            f"https://graph.facebook.com/{GRAPH_VERSION}/{page_id}/feed",
+            data={"message": message, "access_token": token},
+            timeout=30,
+        )
+        data = r.json()
+        print(f"  FB text response: {data}")
+        if "id" in data:
+            return {"success": True, "id": data["id"]}
+        return {
+            "success": False,
+            "error": data.get("error", {}).get("message", str(data)),
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def merge_slides(slides: list) -> bytes:
+    from PIL import Image
+    import io
+
+    images = []
+    for slide in slides:
+        try:
+            img = Image.open(io.BytesIO(slide)).convert("RGB")
+            if img.width != 1080:
+                img = img.resize((1080, 1080), Image.LANCZOS)
+            images.append(img)
+        except Exception as e:
+            print(f"  Slide merge warning: {e}")
+
+    if not images:
+        return b""
+
+    total_h = sum(img.height for img in images)
+    merged = Image.new("RGB", (1080, total_h), (13, 13, 13))
+    y = 0
+    for img in images:
+        merged.paste(img, (0, y))
+        y += img.height
+
+    buf = io.BytesIO()
+    merged.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
+def post_carousel_to_facebook(page_id: str, token: str, slides: list, caption: str) -> dict:
+    if not slides:
+        return {"success": False, "error": "No carousel slides generated"}
+
+    photo_ids = []
+    for i, img_bytes in enumerate(slides):
+        try:
+            r = requests.post(
+                f"https://graph.facebook.com/{GRAPH_VERSION}/{page_id}/photos",
+                data={"access_token": token, "published": "false"},
+                files={"source": (f"slide_{i + 1}.jpg", img_bytes, "image/jpeg")},
+                timeout=45,
+            )
+            data = r.json()
+            pid = data.get("id")
+            if pid:
+                photo_ids.append(pid)
+                print(f"  Slide {i + 1} uploaded: {pid}")
+            else:
+                print(f"  Slide {i + 1} failed: {data}")
+        except Exception as e:
+            print(f"  Slide {i + 1} exception: {e}")
+
+    if photo_ids:
+        payload = {"message": caption, "access_token": token}
+        for i, pid in enumerate(photo_ids):
+            payload[f"attached_media[{i}]"] = json.dumps({"media_fbid": pid})
+
+        try:
+            r = requests.post(
+                f"https://graph.facebook.com/{GRAPH_VERSION}/{page_id}/feed",
+                data=payload,
+                timeout=30,
+            )
+            data = r.json()
+            print(f"  FB carousel response: {data}")
+            if "id" in data:
+                return {"success": True, "id": data["id"]}
+            print(f"  Carousel feed failed: {data.get('error', {}).get('message', str(data))}")
+        except Exception as e:
+            print(f"  Carousel feed exception: {e}")
+
+    merged = merge_slides(slides)
+    if merged:
+        print("  Falling back to merged image")
+        return engine_post_image_to_facebook(page_id, token, merged, caption)
+
+    return {"success": False, "error": "Carousel upload failed"}
+
+
+def commit_log_to_github(entry: dict, gh_token: str, repo: str):
+    if not gh_token or not repo:
+        print("  No GH_PAT — skipping log commit")
+        return
+
+    import base64
+
+    headers = {
+        "Authorization": f"token {gh_token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    url = f"https://api.github.com/repos/{repo}/contents/data/post_log.json"
+
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            existing = json.loads(base64.b64decode(r.json()["content"]).decode())
+            sha = r.json()["sha"]
+        else:
+            existing = []
+            sha = None
+
+        existing.append(entry)
+        existing = existing[-100:]
+
+        content = base64.b64encode(
+            json.dumps(existing, indent=2, ensure_ascii=False).encode()
+        ).decode()
+        data = {
+            "message": f"log: {entry.get('slot', 'post')} {entry.get('time', '')}",
+            "content": content,
+            "branch": "main",
+        }
+        if sha:
+            data["sha"] = sha
+
+        r2 = requests.put(url, json=data, headers=headers, timeout=15)
+        if r2.status_code in (200, 201):
+            print("  Log committed to GitHub")
+        else:
+            print(f"  Log commit failed: {r2.status_code}")
+    except Exception as e:
+        print(f"  Log commit error: {e}")
+
+
 def fetch_trending_topic() -> dict:
-    """
-    Fetch trending topic from Pakistan news RSS feeds.
-    Returns: {"title": str, "summary": str, "source": str}
-    Falls back to Google Trends if RSS fails.
-    """
-    # Try pytrends first — Google Trends Pakistan
     try:
         from pytrends.request import TrendReq
-        pt = TrendReq(hl="en-US", tz=300)  # PKT = UTC+5
-        pt.build_payload(kw_list=[""], geo="PK", timeframe="now 1-d")
+
+        pt = TrendReq(hl="en-US", tz=300)
         trending = pt.trending_searches(pn="pakistan")
         if trending is not None and len(trending) > 0:
-            topic = str(trending.iloc[random.randint(0, min(4, len(trending)-1))][0])
-            print(f"  🔥 Google Trend (PK): {topic}")
+            topic = str(trending.iloc[random.randint(0, min(4, len(trending) - 1))][0])
+            print(f"  Google Trend PK: {topic}")
             return {"title": topic, "summary": f"Trending in Pakistan: {topic}", "source": "Google Trends"}
     except Exception as e:
         print(f"  pytrends failed: {e}")
 
-    # Try RSS feeds
     try:
         import xml.etree.ElementTree as ET
+
         feed_url = random.choice(PAKISTAN_NEWS_FEEDS)
         r = requests.get(feed_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code == 200:
             root = ET.fromstring(r.content)
             items = root.findall(".//item")
             if items:
-                item = items[random.randint(0, min(4, len(items)-1))]
-                title   = item.findtext("title", "").strip()
-                summary = item.findtext("description", "").strip()
-                # Clean HTML tags
-                summary = re.sub(r"<[^>]+>", "", summary)[:300]
+                item = items[random.randint(0, min(4, len(items) - 1))]
+                title = item.findtext("title", "").strip()
+                summary = re.sub(r"<[^>]+>", "", item.findtext("description", "").strip())[:300]
                 if title:
-                    print(f"  📰 RSS topic: {title[:60]}")
+                    print(f"  RSS topic: {title[:60]}")
                     return {"title": title, "summary": summary, "source": feed_url}
     except Exception as e:
         print(f"  RSS failed: {e}")
 
-    # Fallback
     topic = random.choice(TRENDING_TOPICS_FALLBACK)
-    print(f"  📌 Fallback topic: {topic}")
     return {"title": topic, "summary": topic, "source": "fallback"}
 
 
 def generate_trending_post(trend: dict, api_key: str) -> str | None:
-    """Generate a viral Facebook post about a trending topic using Groq."""
-    prompt = f"""You are a viral Pakistani Facebook content creator.
+    prompt = f"""You are Pakistan's #1 viral Facebook creator.
 
-A trending topic in Pakistan right now: "{trend['title']}"
-Context: {trend['summary'][:200]}
+Trending topic in Pakistan: {trend['title']}
+Context: {trend.get('summary', '')[:250]}
 
-Write a viral Facebook post about this trend. Rules:
-- Start with a SHOCKING or CURIOSITY hook related to this specific trend
-- 4 parts: Hook → Value → Punch → CTA
-- Mix of English and Roman Urdu (Hinglish style)
-- Tone: Bold, opinionated, makes people stop scrolling
-- 2-5 emojis naturally placed
-- End with 4-5 relevant hashtags including #Pakistan
+Write one viral Facebook post about this trend.
+Rules:
+- Hinglish / Roman Urdu natural style
+- Hook -> Value -> Punch -> CTA
+- Specific to this trend
+- No generic motivational lines
+- 2-5 emojis naturally
+- End with relevant hashtags including #Pakistan
 - Max 12 words per line
-- NO generic phrases like "believe in yourself", "work hard", "game changer"
-- Be SPECIFIC to this trend — mention real details
-
-Return ONLY the post. No preamble."""
+Return ONLY post text."""
 
     for attempt in range(3):
         try:
@@ -619,114 +311,119 @@ Return ONLY the post. No preamble."""
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 timeout=30,
             )
-            if r.status_code == 200:
-                text = r.json()["choices"][0]["message"]["content"].strip()
-                if len(text) > 150 and not any(p in text.lower() for p in BANNED_PHRASES[:8]):
-                    return text
-                print(f"  Attempt {attempt+1}: quality check failed — retrying")
+            if r.status_code != 200:
+                print(f"  Groq trend error {r.status_code}: {r.text[:120]}")
+                continue
+            text = r.json()["choices"][0]["message"]["content"].strip()
+            if not is_too_short(text) and not is_generic(text):
+                return text
+            print(f"  Trending attempt {attempt + 1}: quality retry")
         except Exception as e:
-            print(f"  Attempt {attempt+1} error: {e}")
+            print(f"  Trending attempt {attempt + 1} error: {e}")
     return None
 
 
-def generate_trending_image_prompt(trend: dict, post_text: str, api_key: str) -> str:
-    """Use Groq to make a specific image prompt for the trending topic."""
-    clean_post = re.sub(r"#\w+", "", post_text)
-    clean_post = re.sub(r"[^\x00-\x7F]+", " ", clean_post).strip()[:200]
-
-    try:
-        r = requests.post(
-            GROQ_API_URL,
-            json={
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": "You are an AI image prompt engineer. Write ONE ultra-specific image prompt. Max 80 words. No text in image. Return ONLY the prompt."},
-                    {"role": "user", "content": f"Trending topic: {trend['title']}\nPost: {clean_post}\n\nWrite a dramatic, cinematic, photorealistic image prompt for this topic. No text. No words in image:"},
-                ],
-                "temperature": 0.7,
-                "max_tokens": 120,
-            },
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            timeout=15,
-        )
-        if r.status_code == 200:
-            prompt = r.json()["choices"][0]["message"]["content"].strip()
-            if "no text" not in prompt.lower():
-                prompt += ", no text, no words, photorealistic, 8k"
-            return prompt
-    except Exception:
-        pass
-    return f"dramatic cinematic photo about {trend['title']}, Pakistan, photorealistic, no text, 8k"
-
-
 def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
-    """Full trending post pipeline — fetch trend → generate → image → post."""
-    from carousel import generate_carousel
-    
-    print(f"\n{'='*50}")
-    print(f"  🔥 TRENDING AUTO POST")
+    print("\n==================================================")
+    print("  TRENDING AUTO POST")
     print(f"  Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    print(f"{'='*50}")
+    print("==================================================")
 
-    # Step 1: Find trending topic
-    print("\n📡 Fetching trending topic from Pakistan...")
     trend = fetch_trending_topic()
-    print(f"  Topic: {trend['title']}")
-
-    # Step 2: Generate post
-    print("\n📝 Generating viral post about trend...")
     text = generate_trending_post(trend, groq_key)
     if not text:
-        print("❌ Could not generate trending post")
+        print("Failed to generate trending post")
         sys.exit(1)
-    print(f"✅ Post generated ({len(text)} chars)")
-    print(f"\n--- PREVIEW ---\n{text[:250]}...\n---")
 
-    # Step 3: Generate carousel
-    print("\n🎨 Generating carousel slides...")
+    slides = []
     try:
         slides = generate_carousel(text, "News & Trends")
-        print(f"  ✅ {len(slides)} slides ready")
+        print(f"  {len(slides)} slides ready")
     except Exception as e:
         print(f"  Carousel failed: {e}")
-        slides = []
 
-    # Step 4: Post to Facebook
-    print("\n📤 Posting to Facebook...")
     if slides:
         result = post_carousel_to_facebook(fb_page, fb_token, slides, text)
-        if not result["success"]:
-            print(f"  Carousel failed: {result['error']} — text fallback")
+        if not result.get("success"):
             result = post_text_to_facebook(fb_page, fb_token, text)
     else:
         result = post_text_to_facebook(fb_page, fb_token, text)
 
-    if result["success"]:
-        print(f"\n✅ TRENDING POST PUBLISHED! ID: {result['id']}")
-        print(f"   Topic: {trend['title']}")
-        commit_log_to_github({
-            "time":    datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-            "slot":    "trending",
-            "niche":   "News & Trends",
-            "topic":   trend["title"],
-            "post_id": result["id"],
-            "status":  "success",
-            "preview": text[:100],
-        }, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
-    else:
-        print(f"\n❌ FAILED: {result['error']}")
-        commit_log_to_github({
-            "time":   datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-            "slot":   "trending",
-            "status": "failed",
-            "error":  result["error"],
-        }, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
+    log_entry = {
+        "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        "slot": "trending",
+        "niche": "News & Trends",
+        "topic": trend["title"],
+        "status": "success" if result.get("success") else "failed",
+        "post_id": result.get("id", ""),
+        "error": result.get("error", ""),
+        "preview": text[:100],
+    }
+    commit_log_to_github(log_entry, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
+
+    if not result.get("success"):
+        print(f"FAILED: {result.get('error')}")
         sys.exit(1)
 
+    print(f"POSTED SUCCESSFULLY: {result['id']}")
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  MAIN
-# ─────────────────────────────────────────────────────────────────────────────
+
+def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str):
+    slot = SLOTS[slot_name]
+
+    print("\n==================================================")
+    print(f"  Auto Post — {slot['label']}")
+    print(f"  Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"  Niche: {slot['niche']} | Lang: {slot['language']}")
+    print("==================================================")
+
+    text = generate_post(slot, groq_key)
+    if not text:
+        print("Failed to generate post")
+        sys.exit(1)
+
+    result = {"success": False, "error": "No post attempt made"}
+
+    try:
+        slides = generate_carousel(text, slot["niche"])
+        print(f"  {len(slides)} slides generated")
+    except Exception as e:
+        print(f"  Carousel failed: {e}")
+        slides = []
+
+    if slides:
+        result = post_carousel_to_facebook(fb_page, fb_token, slides, text)
+
+    if not result.get("success"):
+        img_bytes = generate_and_download_image(slot["niche"], text, groq_key)
+        if img_bytes:
+            result = engine_post_image_to_facebook(fb_page, fb_token, img_bytes, text)
+
+    if not result.get("success"):
+        result = post_text_to_facebook(fb_page, fb_token, text)
+
+    log_entry = {
+        "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        "slot": slot_name,
+        "niche": slot["niche"],
+        "language": slot["language"],
+        "hook_id": slot["hook_id"],
+        "variation": slot["variation"],
+        "tone": slot["tone"],
+        "status": "success" if result.get("success") else "failed",
+        "post_id": result.get("id", ""),
+        "error": result.get("error", ""),
+        "preview": text[:100],
+    }
+    commit_log_to_github(log_entry, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
+
+    if not result.get("success"):
+        print(f"FAILED: {result.get('error')}")
+        sys.exit(1)
+
+    print(f"POSTED SUCCESSFULLY: {result['id']}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--slot", required=True, choices=["morning", "afternoon", "evening", "trending"])
@@ -734,89 +431,19 @@ def main():
 
     groq_key = os.environ.get("GROQ_API_KEY", "")
     fb_token = os.environ.get("FB_PAGE_TOKEN", "")
-    fb_page  = os.environ.get("FB_PAGE_ID", "")
+    fb_page = os.environ.get("FB_PAGE_ID", "")
 
-    # Validate secrets
     if not groq_key:
-        print("❌ GROQ_API_KEY not set in GitHub Secrets")
+        print("GROQ_API_KEY not set in GitHub Secrets")
         sys.exit(1)
     if not fb_token or not fb_page:
-        print("❌ FB_PAGE_TOKEN or FB_PAGE_ID not set in GitHub Secrets")
+        print("FB_PAGE_TOKEN or FB_PAGE_ID not set in GitHub Secrets")
         sys.exit(1)
 
-    # ── Trending slot — special flow ──
     if args.slot == "trending":
         run_trending_post(groq_key, fb_token, fb_page)
-        return
-
-    # ── Regular slots ──
-    slot = SLOTS[args.slot]
-
-    print(f"\n{'='*50}")
-    print(f"  Auto Post — {slot['label']}")
-    print(f"  Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    print(f"  Niche: {slot['niche']} | Lang: {slot['language']}")
-    print(f"{'='*50}")
-
-    # Step 1: Generate post
-    print("\n📝 Generating post...")
-    text = generate_post(slot, groq_key)
-    if not text:
-        print("❌ Failed to generate non-generic post after all retries")
-        sys.exit(1)
-    print(f"✅ Post generated ({len(text)} chars)")
-    print(f"\n--- POST PREVIEW ---\n{text[:200]}...\n---")
-
-    # Step 2: Generate carousel slides
-    print("\n🎨 Generating carousel slides...")
-    try:
-        slides = generate_carousel(text, slot["niche"])
-        print(f"  ✅ {len(slides)} slides generated")
-    except Exception as e:
-        print(f"  Carousel failed: {e} — will try single image fallback")
-        slides = []
-
-    # Step 3: Post to Facebook
-    print("\n📤 Posting to Facebook...")
-    if slides:
-        result = post_carousel_to_facebook(fb_page, fb_token, slides, text)
-        if not result["success"]:
-            print(f"  Carousel post failed: {result['error']} — falling back to text")
-            result = post_text_to_facebook(fb_page, fb_token, text)
     else:
-        # Single image fallback
-        img_bytes = download_image(slot["niche"], text, groq_key)
-        if img_bytes:
-            result = post_image_to_facebook(fb_page, fb_token, img_bytes, text)
-            if not result["success"]:
-                result = post_text_to_facebook(fb_page, fb_token, text)
-        else:
-            result = post_text_to_facebook(fb_page, fb_token, text)
-
-    # Step 4: Handle results safely
-    if result["success"]:
-        print(f"\n✅ POSTED SUCCESSFULLY! ID: {result['id']}")
-        # Commit log to GitHub for self-improvement tracking
-        commit_log_to_github({
-            "time":     datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-            "slot":     args.slot,
-            "niche":    slot["niche"],
-            "language": slot["language"],
-            "hook_id":  slot["hook_id"],
-            "variation": slot["variation"],
-            "post_id":  result["id"],
-            "status":   "success",
-            "preview":  text[:100],
-        }, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
-    else:
-        print(f"\n❌ FAILED: {result['error']}")
-        commit_log_to_github({
-            "time":   datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-            "slot":   args.slot,
-            "status": "failed",
-            "error":  result["error"],
-        }, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
-        sys.exit(1)
+        run_regular_post(args.slot, groq_key, fb_token, fb_page)
 
 
 if __name__ == "__main__":
