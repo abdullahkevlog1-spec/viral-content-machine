@@ -1,12 +1,8 @@
 """
 auto_post.py — Standalone scheduler for GitHub Actions.
 
-Regular auto-post slots now use engine.py as the single source of truth for:
-- hooks
-- niche profiles
-- prompt generation
-- anti-generic quality checks
-- image generation fallback
+Uses engine.py as the content source of truth, reads data/strategy_state.json
+when available, and posts with safe carousel -> feed image -> direct image -> text fallbacks.
 """
 
 import argparse
@@ -15,7 +11,9 @@ import os
 import random
 import re
 import sys
+from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
 
 import requests
 
@@ -26,8 +24,10 @@ from engine import (
     get_hook_by_id,
     is_generic,
     is_too_short,
-    post_image_to_facebook as engine_post_image_to_facebook,
 )
+
+DATA_DIR = Path("data")
+STRATEGY_PATH = DATA_DIR / "strategy_state.json"
 
 SLOTS = {
     "morning": {
@@ -56,6 +56,10 @@ SLOTS = {
     },
 }
 
+ALLOWED_NICHES = {"AI & Tech", "Motivation", "ASMR / Satisfying", "Business"}
+ALLOWED_VARIATIONS = {"Emotional", "Educational", "Bold/Controversial"}
+ALLOWED_LANGUAGES = {"English", "Roman Urdu", "Hinglish"}
+
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GRAPH_VERSION = os.getenv("FB_GRAPH_VERSION", "v19.0")
@@ -74,6 +78,54 @@ TRENDING_TOPICS_FALLBACK = [
     "Tech jobs Pakistan",
     "Startup Pakistan",
 ]
+
+
+def load_json_file(path: Path, default):
+    try:
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"  Could not load {path}: {e}")
+    return default
+
+
+def load_strategy() -> dict:
+    strategy = load_json_file(STRATEGY_PATH, {})
+    if not isinstance(strategy, dict):
+        return {}
+    return strategy
+
+
+def apply_strategy(slot: dict, slot_name: str) -> dict:
+    strategy = load_strategy()
+    if not strategy or strategy.get("learning_status") not in {"active", "warmup"}:
+        return slot
+
+    adapted = deepcopy(slot)
+
+    best_hook = strategy.get("best_hook")
+    best_niche = strategy.get("best_niche")
+    best_style = strategy.get("best_style")
+    best_language = strategy.get("best_language")
+
+    if best_hook:
+        adapted["hook_id"] = best_hook
+    if best_style in ALLOWED_VARIATIONS:
+        adapted["variation"] = best_style
+    if best_language in ALLOWED_LANGUAGES:
+        adapted["language"] = best_language
+
+    # Keep niche diversity by default. Only override morning because it is the most suitable discovery slot.
+    if slot_name == "morning" and best_niche in ALLOWED_NICHES:
+        adapted["niche"] = best_niche
+
+    print(
+        "  Strategy applied: "
+        f"hook={adapted['hook_id']} niche={adapted['niche']} "
+        f"style={adapted['variation']} lang={adapted['language']}"
+    )
+    return adapted
 
 
 def generate_post(slot: dict, api_key: str) -> str | None:
@@ -113,13 +165,70 @@ def post_text_to_facebook(page_id: str, token: str, message: str) -> dict:
         data = r.json()
         print(f"  FB text response: {data}")
         if "id" in data:
-            return {"success": True, "id": data["id"]}
-        return {
-            "success": False,
-            "error": data.get("error", {}).get("message", str(data)),
-        }
+            return {"success": True, "id": data["id"], "method": "text_feed"}
+        return {"success": False, "error": data.get("error", {}).get("message", str(data))}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def post_feed_image_to_facebook(page_id: str, token: str, image_bytes: bytes, caption: str) -> dict:
+    """Preferred image flow: upload unpublished image, then attach it to a normal feed post."""
+    try:
+        upload = requests.post(
+            f"https://graph.facebook.com/{GRAPH_VERSION}/{page_id}/photos",
+            data={"access_token": token, "published": "false"},
+            files={"source": ("post.jpg", image_bytes, "image/jpeg")},
+            timeout=60,
+        )
+        upload_data = upload.json()
+        media_id = upload_data.get("id")
+        print(f"  FB unpublished image response: {upload_data}")
+        if not media_id:
+            return {"success": False, "error": upload_data.get("error", {}).get("message", str(upload_data))}
+
+        feed = requests.post(
+            f"https://graph.facebook.com/{GRAPH_VERSION}/{page_id}/feed",
+            data={
+                "message": caption,
+                "access_token": token,
+                "attached_media[0]": json.dumps({"media_fbid": media_id}),
+            },
+            timeout=30,
+        )
+        feed_data = feed.json()
+        print(f"  FB feed image response: {feed_data}")
+        if "id" in feed_data:
+            return {"success": True, "id": feed_data["id"], "method": "feed_image"}
+        return {"success": False, "error": feed_data.get("error", {}).get("message", str(feed_data))}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def post_direct_photo_to_facebook(page_id: str, token: str, image_bytes: bytes, caption: str) -> dict:
+    """Last image fallback. May create a photo post depending on Page/API behavior."""
+    try:
+        r = requests.post(
+            f"https://graph.facebook.com/{GRAPH_VERSION}/{page_id}/photos",
+            data={"caption": caption, "access_token": token, "published": "true"},
+            files={"source": ("post.jpg", image_bytes, "image/jpeg")},
+            timeout=60,
+        )
+        data = r.json()
+        print(f"  FB direct photo response: {data}")
+        if "id" in data or "post_id" in data:
+            return {"success": True, "id": data.get("post_id", data.get("id")), "method": "direct_photo"}
+        return {"success": False, "error": data.get("error", {}).get("message", str(data))}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def post_image_with_fallbacks(page_id: str, token: str, image_bytes: bytes, caption: str) -> dict:
+    result = post_feed_image_to_facebook(page_id, token, image_bytes, caption)
+    if result.get("success"):
+        return result
+
+    print(f"  Feed image failed: {result.get('error')} — trying direct photo fallback")
+    return post_direct_photo_to_facebook(page_id, token, image_bytes, caption)
 
 
 def merge_slides(slides: list) -> bytes:
@@ -180,15 +289,11 @@ def post_carousel_to_facebook(page_id: str, token: str, slides: list, caption: s
             payload[f"attached_media[{i}]"] = json.dumps({"media_fbid": pid})
 
         try:
-            r = requests.post(
-                f"https://graph.facebook.com/{GRAPH_VERSION}/{page_id}/feed",
-                data=payload,
-                timeout=30,
-            )
+            r = requests.post(f"https://graph.facebook.com/{GRAPH_VERSION}/{page_id}/feed", data=payload, timeout=30)
             data = r.json()
             print(f"  FB carousel response: {data}")
             if "id" in data:
-                return {"success": True, "id": data["id"]}
+                return {"success": True, "id": data["id"], "method": "carousel_feed"}
             print(f"  Carousel feed failed: {data.get('error', {}).get('message', str(data))}")
         except Exception as e:
             print(f"  Carousel feed exception: {e}")
@@ -196,7 +301,7 @@ def post_carousel_to_facebook(page_id: str, token: str, slides: list, caption: s
     merged = merge_slides(slides)
     if merged:
         print("  Falling back to merged image")
-        return engine_post_image_to_facebook(page_id, token, merged, caption)
+        return post_image_with_fallbacks(page_id, token, merged, caption)
 
     return {"success": False, "error": "Carousel upload failed"}
 
@@ -208,10 +313,7 @@ def commit_log_to_github(entry: dict, gh_token: str, repo: str):
 
     import base64
 
-    headers = {
-        "Authorization": f"token {gh_token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
+    headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
     url = f"https://api.github.com/repos/{repo}/contents/data/post_log.json"
 
     try:
@@ -226,14 +328,8 @@ def commit_log_to_github(entry: dict, gh_token: str, repo: str):
         existing.append(entry)
         existing = existing[-100:]
 
-        content = base64.b64encode(
-            json.dumps(existing, indent=2, ensure_ascii=False).encode()
-        ).decode()
-        data = {
-            "message": f"log: {entry.get('slot', 'post')} {entry.get('time', '')}",
-            "content": content,
-            "branch": "main",
-        }
+        content = base64.b64encode(json.dumps(existing, indent=2, ensure_ascii=False).encode()).decode()
+        data = {"message": f"log: {entry.get('slot', 'post')} {entry.get('time', '')}", "content": content, "branch": "main"}
         if sha:
             data["sha"] = sha
 
@@ -241,7 +337,7 @@ def commit_log_to_github(entry: dict, gh_token: str, repo: str):
         if r2.status_code in (200, 201):
             print("  Log committed to GitHub")
         else:
-            print(f"  Log commit failed: {r2.status_code}")
+            print(f"  Log commit failed: {r2.status_code}: {r2.text[:120]}")
     except Exception as e:
         print(f"  Log commit error: {e}")
 
@@ -249,7 +345,6 @@ def commit_log_to_github(entry: dict, gh_token: str, repo: str):
 def fetch_trending_topic() -> dict:
     try:
         from pytrends.request import TrendReq
-
         pt = TrendReq(hl="en-US", tz=300)
         trending = pt.trending_searches(pn="pakistan")
         if trending is not None and len(trending) > 0:
@@ -261,7 +356,6 @@ def fetch_trending_topic() -> dict:
 
     try:
         import xml.etree.ElementTree as ET
-
         feed_url = random.choice(PAKISTAN_NEWS_FEEDS)
         r = requests.get(feed_url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code == 200:
@@ -302,12 +396,7 @@ Return ONLY post text."""
         try:
             r = requests.post(
                 GROQ_API_URL,
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": round(0.85 + attempt * 0.05, 2),
-                    "max_tokens": 600,
-                },
+                json={"model": GROQ_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": round(0.85 + attempt * 0.05, 2), "max_tokens": 600},
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 timeout=30,
             )
@@ -323,6 +412,26 @@ Return ONLY post text."""
     return None
 
 
+def build_log_entry(slot_name: str, slot: dict, result: dict, text: str, extra: dict | None = None) -> dict:
+    entry = {
+        "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        "slot": slot_name,
+        "niche": slot.get("niche", ""),
+        "language": slot.get("language", ""),
+        "hook_id": slot.get("hook_id", ""),
+        "variation": slot.get("variation", ""),
+        "tone": slot.get("tone", ""),
+        "status": "success" if result.get("success") else "failed",
+        "post_id": result.get("id", ""),
+        "method": result.get("method", ""),
+        "error": result.get("error", ""),
+        "preview": text[:100],
+    }
+    if extra:
+        entry.update(extra)
+    return entry
+
+
 def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
     print("\n==================================================")
     print("  TRENDING AUTO POST")
@@ -335,41 +444,35 @@ def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
         print("Failed to generate trending post")
         sys.exit(1)
 
-    slides = []
     try:
         slides = generate_carousel(text, "News & Trends")
         print(f"  {len(slides)} slides ready")
     except Exception as e:
         print(f"  Carousel failed: {e}")
+        slides = []
 
-    if slides:
-        result = post_carousel_to_facebook(fb_page, fb_token, slides, text)
-        if not result.get("success"):
-            result = post_text_to_facebook(fb_page, fb_token, text)
-    else:
+    result = post_carousel_to_facebook(fb_page, fb_token, slides, text) if slides else {"success": False, "error": "No slides"}
+    if not result.get("success"):
         result = post_text_to_facebook(fb_page, fb_token, text)
 
-    log_entry = {
-        "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-        "slot": "trending",
-        "niche": "News & Trends",
-        "topic": trend["title"],
-        "status": "success" if result.get("success") else "failed",
-        "post_id": result.get("id", ""),
-        "error": result.get("error", ""),
-        "preview": text[:100],
-    }
+    log_entry = build_log_entry(
+        "trending",
+        {"niche": "News & Trends", "language": "Hinglish", "hook_id": "trend", "variation": "Trending", "tone": 8},
+        result,
+        text,
+        {"topic": trend["title"]},
+    )
     commit_log_to_github(log_entry, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
 
     if not result.get("success"):
         print(f"FAILED: {result.get('error')}")
         sys.exit(1)
-
     print(f"POSTED SUCCESSFULLY: {result['id']}")
 
 
 def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str):
-    slot = SLOTS[slot_name]
+    base_slot = SLOTS[slot_name]
+    slot = apply_strategy(deepcopy(base_slot), slot_name)
 
     print("\n==================================================")
     print(f"  Auto Post — {slot['label']}")
@@ -397,30 +500,17 @@ def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str)
     if not result.get("success"):
         img_bytes = generate_and_download_image(slot["niche"], text, groq_key)
         if img_bytes:
-            result = engine_post_image_to_facebook(fb_page, fb_token, img_bytes, text)
+            result = post_image_with_fallbacks(fb_page, fb_token, img_bytes, text)
 
     if not result.get("success"):
         result = post_text_to_facebook(fb_page, fb_token, text)
 
-    log_entry = {
-        "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-        "slot": slot_name,
-        "niche": slot["niche"],
-        "language": slot["language"],
-        "hook_id": slot["hook_id"],
-        "variation": slot["variation"],
-        "tone": slot["tone"],
-        "status": "success" if result.get("success") else "failed",
-        "post_id": result.get("id", ""),
-        "error": result.get("error", ""),
-        "preview": text[:100],
-    }
+    log_entry = build_log_entry(slot_name, slot, result, text, {"adapted_from_strategy": slot != base_slot})
     commit_log_to_github(log_entry, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
 
     if not result.get("success"):
         print(f"FAILED: {result.get('error')}")
         sys.exit(1)
-
     print(f"POSTED SUCCESSFULLY: {result['id']}")
 
 
