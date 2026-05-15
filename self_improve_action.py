@@ -1,20 +1,61 @@
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+LOG_PATH = DATA_DIR / "post_log.json"
+OUTPUT_PATH = DATA_DIR / "self_improve_report.json"
+
+
 def analyze_post_logs(logs):
-    # Early return if logs is empty
     if not logs:
-        return {'niches': [], 'recent_7d': [], 'last_post': None}
+        return {
+            "total_posts": 0,
+            "niches": [],
+            "last_post": None,
+            "status": "no_data"
+        }
 
-    # Process logs to analyze niches, recent posts over the last 7 days, and the last post
     niches = set()
-    recent_posts = []
-    last_post = None
+    last_post = logs[-1] if logs else None
 
-    # Iterate through logs to analyze content
     for log in logs:
-        niches.update(log.get('niche', []))
-        post_date = log.get('date')
-        # Check if the post is within the last 7 days
-        if post_date and (datetime.utcnow() - post_date).days <= 7:
-            recent_posts.append(log)
-        last_post = log
+        niche = log.get("niche")
+        if isinstance(niche, list):
+            niches.update(niche)
+        elif niche:
+            niches.add(niche)
 
-    return {'niches': list(niches), 'recent_7d': recent_posts, 'last_post': last_post}
+    return {
+        "total_posts": len(logs),
+        "niches": list(niches),
+        "last_post": last_post,
+        "status": "ok",
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    }
+
+
+def main():
+    try:
+        if LOG_PATH.exists():
+            with open(LOG_PATH, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+        else:
+            logs = []
+
+        report = analyze_post_logs(logs)
+
+        with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2)
+
+        print("self_improve_report.json updated")
+
+    except Exception as e:
+        with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+            json.dump({"error": str(e)}, f, indent=2)
+        print(f"Error: {e}")
+
+
+if __name__ == "__main__":
+    main()
