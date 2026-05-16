@@ -96,7 +96,7 @@ def scheduled_post_job(slot: dict):
     status = "POSTED ✅" if post_result.get("success") else f"FB ERROR — {post_result.get('error')}"
     _log_schedule(slot["label"], status, result["text"])
 
-    # Save to history
+    # ✅ BUG #7 FIXED — post_id added, timestamp → time
     analytics.add_to_history({
         "text": result["text"],
         "niche": slot["niche"],
@@ -104,7 +104,8 @@ def scheduled_post_job(slot: dict):
         "variation": slot["variation"],
         "tone_level": slot["tone"],
         "auto_scheduled": True,
-        "timestamp": datetime.now(PKT).strftime("%Y-%m-%d %H:%M"),
+        "post_id": post_result.get("id", ""),
+        "time": datetime.now(PKT).strftime("%Y-%m-%d %H:%M"),
     })
 
 def _log_schedule(label: str, status: str, text: str = ""):
@@ -1049,7 +1050,7 @@ FB_PAGE_ID     = "1078072238724577"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  TAB 3 — HISTORY  [MODIFIED — shows new fields: hook, variation, tone]
+#  TAB 4 — HISTORY
 # ═════════════════════════════════════════════════════════════════════════════
 with tab4:
     st.markdown("#### 📜 Post History")
@@ -1085,7 +1086,7 @@ with tab4:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-#  TAB 4 — ANALYTICS  [NEW TAB]
+#  TAB 5 — ANALYTICS
 # ═════════════════════════════════════════════════════════════════════════════
 with tab5:
     st.markdown("#### 📊 Engagement Analytics")
@@ -1094,7 +1095,6 @@ with tab5:
     if not history:
         st.info("Post some content first to see analytics here.")
     else:
-        # ── Top-level stats row ──
         total  = len(history)
         today  = analytics.posts_today(history)
         weekly = analytics.posts_this_week(history)
@@ -1111,7 +1111,6 @@ with tab5:
 
         col_left, col_right = st.columns(2)
 
-        # [NEW] Hook usage breakdown
         with col_left:
             st.markdown("**🔍 Hook Style Usage**")
             hook_summary = analytics.hook_performance_summary(history)
@@ -1131,7 +1130,6 @@ with tab5:
             else:
                 st.caption("No hook data yet.")
 
-        # [NEW] Niche + Variation breakdown
         with col_right:
             st.markdown("**📂 Niche Distribution**")
             niche_summary = analytics.niche_usage_summary(history)
@@ -1175,12 +1173,10 @@ with tab5:
             )
 
         st.markdown("---")
-        st.caption("💡 Future upgrade: connect Facebook Graph API Insights to auto-pull likes, comments, and reach per post — then this page will show which hook styles actually drive engagement for your audience.")
+        st.caption("💡 Future upgrade: connect Facebook Graph API Insights to auto-pull likes, comments, and reach per post.")
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  TAB 6 — SELF IMPROVE
-# ═════════════════════════════════════════════════════════════════════════════
-#  TAB 6 — SELF IMPROVE (reads from GitHub — zero secrets needed)
 # ═════════════════════════════════════════════════════════════════════════════
 with tab6:
 
@@ -1190,7 +1186,6 @@ with tab6:
     st.markdown("#### 🧠 Self-Improvement Engine")
     st.info("Raat 11 PM ko GitHub Actions khud analysis karta hai — report GitHub mein save hoti hai. Yahan sirf dekhna hai aur approve karna hai. Koi secret nahi chahiye.")
 
-    # ── Load report from GitHub raw URL (no auth needed — public repo) ──
     def load_github_report() -> dict | None:
         try:
             r = requests.get(f"{GITHUB_RAW}/data/report.json", timeout=10)
@@ -1201,14 +1196,12 @@ with tab6:
         return None
 
     def mark_approved_github(suggestion_index: int, report: dict):
-        """Commit approved status to GitHub via API."""
         try:
             gh_pat = st.secrets.get("GH_PAT", "")
         except Exception:
             gh_pat = ""
 
         if not gh_pat:
-            # No PAT — just update session state
             if "approved" not in st.session_state:
                 st.session_state["approved"] = []
             if suggestion_index not in st.session_state["approved"]:
@@ -1243,7 +1236,6 @@ with tab6:
             st.warning(f"GitHub commit failed: {e}")
             return False
 
-    # Refresh button
     col_r, col_i = st.columns([2, 1])
     with col_r:
         refresh = st.button("🔄 Refresh Report", use_container_width=True)
@@ -1260,7 +1252,6 @@ with tab6:
         st.success(f"✅ Report: {report.get('generated_at', 'Unknown')}")
         st.markdown("---")
 
-        # Stats
         log_a = report.get("log_analysis", {})
         fb    = report.get("facebook", {})
 
