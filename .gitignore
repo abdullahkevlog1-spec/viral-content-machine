@@ -1,0 +1,38 @@
+# Environment secrets
+.env
+.env.*
+streamlit/secrets.toml
+.secrets.toml
+
+# Facebook / AI configs
+fb_config.json
+schedule_log.json
+analytics_history.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Streamlit
+.streamlit/
+
+# Generated media
+generated_images/
+*.png
+*.jpg
+*.jpeg
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
