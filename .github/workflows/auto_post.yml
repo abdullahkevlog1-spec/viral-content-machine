@@ -65,15 +65,22 @@ jobs:
         run: python update_actions_status.py
 
       - name: Update FB analytics
+        env:
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         run: python update_fb_analytics.py
 
       - name: Update strategy state
+        env:
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         run: python update_strategy_state.py
 
       - name: Commit monitor updates
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
+          git pull --rebase origin main
           git add data/*.json
           git commit -m "Auto update monitor data" || echo "No changes to commit"
           git push
