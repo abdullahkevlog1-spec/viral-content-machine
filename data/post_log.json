@@ -1,14 +1,13 @@
 [
-  {
-    "time": "2026-05-11 12:00",
-    "timestamp": "2026-05-11 12:00 UTC",
-    "status": "success",
-    "type": "carousel",
-    "niche": "",
-    "hook_id": "",
-    "variation": "",
-    "slot": "",
-    "language": "",
-    "post_id": ""
-  }
+{
+  "time":"2026-05-11 12:00",
+  "timestamp":"2026-05-11 12:00 UTC",
+  "status":"success",
+  "niche":"",
+  "hook_id":"",
+  "variation":"",
+  "slot":"",
+  "language":"",
+  "post_id":""
+}
 ]
