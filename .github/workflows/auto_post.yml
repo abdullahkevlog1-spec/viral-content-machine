@@ -79,8 +79,10 @@ jobs:
       - name: Commit monitor updates
         run: |
           git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git pull --rebase origin main
-          git add data/*.json
-          git commit -m "Auto update monitor data" || echo "No changes to commit"
-          git push
+          git config --global user.email "actions@github.com"
+          git stash
+          git pull --rebase origin main || true
+          git stash pop || true
+          git add -A
+          git diff --staged --quiet || git commit -m "chore: update monitor data [skip ci]"
+          git push || true
