@@ -4,6 +4,8 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 import requests
+import time
+import google.generativeai as genai
 import random
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -362,7 +364,7 @@ def build_prompt(niche: str, hook_style: dict, variation: str, tone_level: int, 
     }.get(variation, "180-250 words.")
 
     niche_context = {
-        "AI & Tech":         "Name SPECIFIC: ChatGPT-4o, Gemini 1.5 Pro, Claude 3.5, Midjourney V6, Sora. Real numbers, real impact.",
+        "AI & Tech":         "Name SPECIFIC 2026 tools: Claude Sonnet 4.6, GPT-5.5, Gemini 2.5 Pro, Cursor, Windsurf, Codex. Real numbers, real impact.",
         "Motivation":        "REAL Pakistan scenarios: raat 2 baje akele kaam, parents ki umeedein, rejection letter, failed attempt.",
         "ASMR / Satisfying": "SPECIFIC sensory: kinetic sand texture, soap crunch sound, slime stretch pop, rain on window glass.",
         "Business":          "Specific numbers: '3 clients in 2 weeks', 'Rs.50k with one skill'. Real Pakistani market.",
@@ -409,6 +411,35 @@ Write now:"""
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
+GEMINI_MODEL = "gemini-2.0-flash"
+
+def call_ai(prompt: str, api_key: str, temperature: float = 0.9) -> str:
+    """Call Gemini 2.0 Flash — free tier with retry. [SWITCHED from Groq]"""
+    try:
+        genai.configure(api_key=api_key)
+        time.sleep(2)
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        for attempt in range(3):
+            try:
+                response = model.generate_content(
+                    prompt,
+                    generation_config={
+                        "temperature": temperature,
+                        "max_output_tokens": 600,
+                    }
+                )
+                text = response.text.strip()
+                if text and len(text) > 50:
+                    return text
+                time.sleep(3)
+            except Exception as e:
+                print(f"  Gemini attempt {attempt+1}: {e}")
+                time.sleep(5)
+    except Exception as e:
+        print(f"  Gemini setup error: {e}")
+    return ""
+
+
 def generate_single(niche: str, hook_style: dict, variation: str, tone_level: int,
                     api_key: str, max_retries: int = 3, language: str = "English") -> dict:
     """
@@ -426,31 +457,10 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
         prompt = build_prompt(niche, hook_style, variation, tone_level, language)
         temperature = round(0.82 + (attempt * 0.06), 2)
         try:
-            response = requests.post(
-                GROQ_API_URL,
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": temperature,
-                    "max_tokens": 600,
-                    "top_p": 0.92,
-                },
-                headers={
-                    "Authorization": f"Bearer {api_key.strip()}",
-                    "Content-Type": "application/json"
-                },
-                timeout=30
-            )
-
-            if response.status_code == 401:
-                return {"text": "", "error": "GROQ_INVALID_KEY", "retries": attempt, "flagged_generic": False}
-            if response.status_code == 429:
-                return {"text": "", "error": "GROQ_RATE_LIMIT", "retries": attempt, "flagged_generic": False}
-            if response.status_code != 200:
-                return {"text": "", "error": f"GROQ_HTTP_{response.status_code}", "retries": attempt, "flagged_generic": False}
-
-            data = response.json()
-            text = data["choices"][0]["message"]["content"].strip()
+            # [SWITCHED TO GEMINI 2.0 FLASH]
+            text = call_ai(prompt, api_key, temperature)
+            if not text:
+                continue
             last_text = text
 
             # Quality gates
@@ -571,26 +581,13 @@ Rules:
     user = f"Niche: {niche}\nPost: {clean_text}\nBase style: {base_style}\n\nWrite the image prompt:"
 
     try:
-        r = requests.post(
-            GROQ_API_URL,
-            json={
-                "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user}
-                ],
-                "temperature": 0.7,
-                "max_tokens": 120,
-            },
-            headers={"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"},
-            timeout=15
-        )
-        if r.status_code == 200:
-            prompt = r.json()["choices"][0]["message"]["content"].strip()
-            # Ensure no text instruction always appended
-            if "no text" not in prompt.lower():
-                prompt += ", no text, no words, photorealistic"
-            return prompt
+        # [SWITCHED TO GEMINI 2.0 FLASH]
+        full_prompt = system + "\n\n" + user
+        result = call_ai(full_prompt, api_key, temperature=0.7)
+        if result:
+            if "no text" not in result.lower():
+                result += ", no text, no words, photorealistic"
+            return result
     except Exception:
         pass
 
