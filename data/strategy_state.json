@@ -4,9 +4,23 @@
   "best_style": "Bold/Controversial",
   "best_slot": "morning",
   "best_language": "English",
+  "hook_weights": {
+    "curiosity": 1.0,
+    "bold_claim": 1.0,
+    "relatable_pain": 1.0,
+    "controversy": 1.0,
+    "authority": 1.0
+  },
+  "niche_weights": {
+    "AI & Tech": 1.0,
+    "Motivation": 1.0,
+    "ASMR / Satisfying": 1.0,
+    "Business": 1.0
+  },
   "successful_posts": 1,
   "total_posts": 1,
   "latest_score": 0,
   "learning_status": "active",
-  "updated_at": "2026-05-16 10:08 UTC"
+  "version": 1,
+  "updated_at": "2026-05-17 08:04 UTC"
 }
