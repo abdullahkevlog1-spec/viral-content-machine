@@ -30,6 +30,7 @@ def get_best(counter, fallback):
 def main():
     logs = load_json(POST_LOG_PATH, [])
     analytics = load_json(ANALYTICS_PATH, {})
+    existing = load_json(OUTPUT_PATH, {})
 
     successful_logs = [log for log in logs if log.get("status") == "success"]
 
@@ -53,16 +54,34 @@ def main():
 
     score = analytics.get("score", 0)
 
+    hook_weights = existing.get("hook_weights", {
+        "curiosity": 1.0,
+        "bold_claim": 1.0,
+        "relatable_pain": 1.0,
+        "controversy": 1.0,
+        "authority": 1.0,
+    })
+
+    niche_weights = existing.get("niche_weights", {
+        "AI & Tech": 1.0,
+        "Motivation": 1.0,
+        "ASMR / Satisfying": 1.0,
+        "Business": 1.0,
+    })
+
     state = {
         "best_hook": get_best(hook_counter, "curiosity"),
         "best_niche": get_best(niche_counter, "AI & Tech"),
         "best_style": get_best(style_counter, "Bold/Controversial"),
         "best_slot": get_best(slot_counter, "morning"),
         "best_language": get_best(language_counter, "English"),
+        "hook_weights": hook_weights,
+        "niche_weights": niche_weights,
         "successful_posts": len(successful_logs),
         "total_posts": len(logs),
         "latest_score": score,
         "learning_status": "active",
+        "version": existing.get("version", 1),
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     }
 
