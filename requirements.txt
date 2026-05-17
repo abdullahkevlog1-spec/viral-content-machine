@@ -4,3 +4,4 @@ APScheduler
 pytz
 Pillow
 pytrends
+google-generativeai
