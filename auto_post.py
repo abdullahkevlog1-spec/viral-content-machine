@@ -29,6 +29,17 @@ from engine import (
     post_image_to_facebook as engine_post_image_to_facebook,
 )
 
+# ── Agent import — safe fallback agar agent.py missing ho ──
+try:
+    from agent import AgentDecision
+    _agent = AgentDecision()
+    AGENT_ENABLED = True
+    print("  [Agent] Quality gate: ENABLED")
+except Exception as _agent_err:
+    _agent = None
+    AGENT_ENABLED = False
+    print(f"  [Agent] Disabled (import failed: {_agent_err})")
+
 SLOTS = {
     "morning": {
         "label": "🌅 Subah 9:00 AM",
@@ -126,12 +137,16 @@ def merge_slides(slides: list) -> bytes:
     from PIL import Image
     import io
 
+    TARGET_W = 1080
     images = []
     for slide in slides:
         try:
             img = Image.open(io.BytesIO(slide)).convert("RGB")
-            if img.width != 1080:
-                img = img.resize((1080, 1080), Image.LANCZOS)
+            if img.width != TARGET_W:
+                ratio = TARGET_W / img.width
+                img = img.resize(
+                    (TARGET_W, int(img.height * ratio)), Image.LANCZOS
+                )
             images.append(img)
         except Exception as e:
             print(f"  Slide merge warning: {e}")
@@ -140,7 +155,7 @@ def merge_slides(slides: list) -> bytes:
         return b""
 
     total_h = sum(img.height for img in images)
-    merged = Image.new("RGB", (1080, total_h), (13, 13, 13))
+    merged = Image.new("RGB", (TARGET_W, total_h), (13, 13, 13))
     y = 0
     for img in images:
         merged.paste(img, (0, y))
@@ -359,7 +374,11 @@ def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
         "error": result.get("error", ""),
         "preview": text[:100],
     }
-    commit_log_to_github(log_entry, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
+    commit_log_to_github(
+        log_entry,
+        os.environ.get("GH_PAT", ""),
+        os.environ.get("GITHUB_REPO", ""),
+    )
 
     if not result.get("success"):
         print(f"FAILED: {result.get('error')}")
@@ -369,7 +388,13 @@ def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
 
 
 def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str):
-    slot = SLOTS[slot_name]
+    base_slot = SLOTS[slot_name]
+
+    # ── Step 1: Agent se adapted strategy lo ──
+    if AGENT_ENABLED:
+        slot = _agent.get_strategy(base_slot, slot_name)
+    else:
+        slot = base_slot
 
     print("\n==================================================")
     print(f"  Auto Post — {slot['label']}")
@@ -377,11 +402,34 @@ def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str)
     print(f"  Niche: {slot['niche']} | Lang: {slot['language']}")
     print("==================================================")
 
+    # ── Step 2: First draft generate karo ──
     text = generate_post(slot, groq_key)
     if not text:
         print("Failed to generate post")
         sys.exit(1)
 
+    # ── Step 3: Agent quality gate (max 2 attempts) ──
+    if AGENT_ENABLED:
+        for attempt in range(1, 3):
+            verdict = _agent.approve(text, slot, attempt=attempt)
+
+            if verdict["action"] in ("post", "post_anyway"):
+                # Approved — aage badho
+                break
+
+            elif verdict["action"] == "regenerate":
+                print(f"  Regenerating (attempt {attempt + 1}/2)...")
+                new_text = generate_post(slot, groq_key)
+                if new_text:
+                    text = new_text
+                else:
+                    # Regeneration fail — original text use karo
+                    print("  Regeneration failed — using original draft")
+                    break
+    else:
+        print("  [Agent] Gate skipped — posting original draft")
+
+    # ── Step 4: Post karo (carousel → image → text fallbacks) ──
     result = {"success": False, "error": "No post attempt made"}
 
     try:
@@ -402,20 +450,29 @@ def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str)
     if not result.get("success"):
         result = post_text_to_facebook(fb_page, fb_token, text)
 
+    # ── Step 5: Log commit ──
+    hook = get_hook_by_id(slot["hook_id"])
     log_entry = {
         "time": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
         "slot": slot_name,
         "niche": slot["niche"],
         "language": slot["language"],
         "hook_id": slot["hook_id"],
+        "hook_style": hook.get("name", ""),        # learning engine ke liye
         "variation": slot["variation"],
         "tone": slot["tone"],
         "status": "success" if result.get("success") else "failed",
         "post_id": result.get("id", ""),
+        "method": result.get("method", ""),
         "error": result.get("error", ""),
         "preview": text[:100],
+        "adapted_from_strategy": slot != base_slot,
     }
-    commit_log_to_github(log_entry, os.environ.get("GH_PAT", ""), os.environ.get("GITHUB_REPO", ""))
+    commit_log_to_github(
+        log_entry,
+        os.environ.get("GH_PAT", ""),
+        os.environ.get("GITHUB_REPO", ""),
+    )
 
     if not result.get("success"):
         print(f"FAILED: {result.get('error')}")
@@ -426,7 +483,11 @@ def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--slot", required=True, choices=["morning", "afternoon", "evening", "trending"])
+    parser.add_argument(
+        "--slot",
+        required=True,
+        choices=["morning", "afternoon", "evening", "trending"],
+    )
     args = parser.parse_args()
 
     groq_key = os.environ.get("GROQ_API_KEY", "")
