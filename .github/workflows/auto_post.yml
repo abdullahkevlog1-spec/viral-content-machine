@@ -55,7 +55,7 @@ jobs:
           fi
 
       - name: Run scheduler
-        run: python -c "import scheduler_runner; print(scheduler_runner.get_next_slot('${{ env.SLOT }}')[0])"
+        run: python -c "import os, scheduler_runner; print(scheduler_runner.get_next_slot(os.environ['SLOT'])[0])"
 
       - name: Run auto post
         env:
