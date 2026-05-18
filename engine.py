@@ -411,7 +411,7 @@ Write now:"""
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 def call_ai(prompt: str, api_key: str, temperature: float = 0.9) -> str:
     """Call Gemini 2.0 Flash — free tier with retry. [SWITCHED from Groq]"""
