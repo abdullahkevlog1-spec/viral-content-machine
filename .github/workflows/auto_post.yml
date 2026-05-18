@@ -1,4 +1,4 @@
-name: Auto Post — AI with Abdullah
+name: Auto Post - AI with Abdullah
 
 on:
   schedule:
@@ -54,6 +54,9 @@ jobs:
             fi
           fi
 
+      - name: Run scheduler
+        run: python -c "import scheduler_runner; print(scheduler_runner.get_next_slot('${{ env.SLOT }}')[0])"
+
       - name: Run auto post
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -65,25 +68,39 @@ jobs:
         run: python auto_post.py --slot $SLOT
 
       - name: Update actions status
-        run: python update_actions_status.py
+        if: always()
+        run: python update_actions_status.py || true
 
       - name: Update FB analytics
+        if: always()
         env:
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-        run: python update_fb_analytics.py
+        run: python update_fb_analytics.py || true
 
       - name: Update strategy state
+        if: always()
         env:
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-        run: python update_strategy_state.py
+        run: python update_strategy_state.py || true
+
+      - name: Run self-improvement snapshot
+        if: always()
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GITHUB_REPO: abdullahkevlog1-spec/viral-content-machine
+        run: python self_improve.py || true
 
       - name: Commit monitor updates
+        if: always()
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
-          git stash
+          git stash || true
           git pull --rebase origin main || true
           git stash pop || true
           git add -A
