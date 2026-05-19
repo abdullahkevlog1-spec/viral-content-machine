@@ -55,6 +55,14 @@ def main(argv: list[str] | None = None) -> int:
 
     slot_name, slot = scheduler_runner.get_next_slot(args.slot)
     bundle = content_orchestrator.generate_content_bundle(slot_name, slot, groq_key)
+
+    # Safety fallback: if trending generation fails, fall back to morning content
+    if not bundle and args.slot == "trending":
+        print("[Trending] Failed to generate trending content")
+        print("[Trending] Falling back to morning content pipeline")
+        slot_name, slot = scheduler_runner.get_next_slot("morning")
+        bundle = content_orchestrator.generate_content_bundle(slot_name, slot, groq_key)
+
     if not bundle:
         print("Failed to generate publishable content")
         return 1
