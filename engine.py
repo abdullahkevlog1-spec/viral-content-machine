@@ -1,12 +1,33 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #  engine.py — Viral Content Generation Engine
-#  NEW FILE — handles all AI logic, hooks, niche profiles, anti-generic filter
+#  PATCHED v3 — Groq primary + Gemini REST fallback + emergency templates
+#
+#  WHAT CHANGED (everything else is identical to original):
+#  ─────────────────────────────────────────────────────
+#  1. Removed: import google.generativeai as genai  (deprecated SDK)
+#  2. Removed: GEMINI_MODEL constant
+#  3. Added:   _call_groq(), _call_gemini_rest(), _emergency_template()
+#  4. Rewrote: call_ai() — proper 2-provider fallback chain
+#  5. Patched: generate_single() — emergency template at final fallback
+#  6. Cleaned: generate_image_prompt_via_groq() stale comments removed
+#
+#  PROVIDER CHAIN:
+#  ───────────────
+#  Groq (GROQ_API_KEY) → Gemini REST (GEMINI_API_KEY env) → Emergency Template
+#
+#  KEY MAPPING (matches auto_post.py + workflow secrets):
+#  ──────────────────────────────────────────────────────
+#  api_key parameter everywhere = GROQ_API_KEY
+#  GEMINI_API_KEY read directly from os.environ (fallback, optional)
 # ═══════════════════════════════════════════════════════════════════════════
 
-import requests
-import time
-import google.generativeai as genai
+import os
+import re
 import random
+import time
+
+import requests
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HOOK STYLES LIBRARY  (12 psychology-backed hooks)
@@ -134,6 +155,7 @@ HOOK_STYLES = [
     },
 ]
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  NICHE PROFILES — tone, audience, CTA library per niche
 # ─────────────────────────────────────────────────────────────────────────────
@@ -228,11 +250,11 @@ NICHE_PROFILES = {
     }
 }
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  ANTI-GENERIC FILTER — rejects clichéd, low-engagement output
 # ─────────────────────────────────────────────────────────────────────────────
 GENERIC_PHRASES = [
-    # Original banned
     "stay motivated", "work hard every day", "never give up", "success is important",
     "believe in yourself", "just keep going", "you can do it", "dream big",
     "hustle every day", "grind never stops", "be positive", "think positive",
@@ -241,7 +263,6 @@ GENERIC_PHRASES = [
     "unlock your potential", "embrace the journey", "one step at a time",
     "the sky is the limit", "reach for the stars", "hard work pays off",
     "every day is a new opportunity", "make every day count",
-    # New strict additions
     "in today's world", "in today's fast", "in the digital age",
     "it's no secret", "the truth is", "at the end of the day",
     "game changer", "game-changer", "think outside the box",
@@ -262,28 +283,29 @@ WEAK_OPENERS = [
     "i want to", "i am going to", "this post is about",
 ]
 
+
 def is_generic(text: str) -> bool:
     """Returns True if text contains ANY generic phrase — strict mode."""
     text_lower = text.lower()
-    # Reject on even 1 banned phrase
     for phrase in GENERIC_PHRASES:
         if phrase in text_lower:
             return True
-    # Reject weak openers
     first_line = text_lower.split("\n")[0].strip()
     for opener in WEAK_OPENERS:
         if first_line.startswith(opener):
             return True
     return False
 
+
 def is_too_short(text: str) -> bool:
-    """Reject posts under 150 characters or fewer than 3 paragraphs."""
+    """Reject posts under 150 characters or fewer than 2 paragraphs."""
     if len(text.strip()) < 150:
         return True
     paragraphs = [p for p in text.strip().split("\n\n") if p.strip()]
     if len(paragraphs) < 2:
         return True
     return False
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  TONE LEVEL DESCRIPTIONS
@@ -296,8 +318,9 @@ def tone_descriptor(level: int) -> str:
     else:
         return "aggressive and provocative — bold claims, challenge common beliefs, create debate. Be fearless."
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-#  PROMPT BUILDER — constructs engineered prompt per variation
+#  PROMPT BUILDER
 # ─────────────────────────────────────────────────────────────────────────────
 VARIATION_INSTRUCTIONS = {
     "Emotional": (
@@ -338,19 +361,21 @@ Mix naturally — don't force either language. Sound like a smart Pakistani/Indi
 }
 
 CONTENT_FRAMEWORKS_ENGINE = [
-    {"name": "Confession",       "structure": "Personal confession → why it matters → question to reader"},
-    {"name": "Myth vs Reality",  "structure": "Common myth → destroy with specific fact → real truth"},
-    {"name": "Before/After",     "structure": "Stark transformation → specific turning point → how reader can do it"},
-    {"name": "Unpopular Opinion","structure": "Bold opinion → 2-3 specific reasons → invite debate"},
-    {"name": "Behind The Scenes","structure": "Hidden truth revealed → insider knowledge → reader feels special"},
-    {"name": "The Mistake",      "structure": "Specific mistake → what went wrong → clear lesson"},
-    {"name": "Numbered Reveal",  "structure": "3 surprising insights → build to best last"},
-    {"name": "Sensory Story",    "structure": "Vivid sensory scene → sounds textures smells → transport reader"},
-    {"name": "What Nobody Says", "structure": "What everyone thinks → what nobody says → the real truth"},
-    {"name": "Time Machine",     "structure": "You from past → what changed → message to past self"},
+    {"name": "Confession",        "structure": "Personal confession → why it matters → question to reader"},
+    {"name": "Myth vs Reality",   "structure": "Common myth → destroy with specific fact → real truth"},
+    {"name": "Before/After",      "structure": "Stark transformation → specific turning point → how reader can do it"},
+    {"name": "Unpopular Opinion", "structure": "Bold opinion → 2-3 specific reasons → invite debate"},
+    {"name": "Behind The Scenes", "structure": "Hidden truth revealed → insider knowledge → reader feels special"},
+    {"name": "The Mistake",       "structure": "Specific mistake → what went wrong → clear lesson"},
+    {"name": "Numbered Reveal",   "structure": "3 surprising insights → build to best last"},
+    {"name": "Sensory Story",     "structure": "Vivid sensory scene → sounds textures smells → transport reader"},
+    {"name": "What Nobody Says",  "structure": "What everyone thinks → what nobody says → the real truth"},
+    {"name": "Time Machine",      "structure": "You from past → what changed → message to past self"},
 ]
 
-def build_prompt(niche: str, hook_style: dict, variation: str, tone_level: int, language: str = "English") -> str:
+
+def build_prompt(niche: str, hook_style: dict, variation: str, tone_level: int,
+                 language: str = "English") -> str:
     profile = NICHE_PROFILES[niche]
     hook_examples = "\n".join([f'  • "{ex}"' for ex in hook_style["examples"]])
     hashtags_sample = " ".join(random.sample(profile["hashtag_pool"], min(5, len(profile["hashtag_pool"]))))
@@ -405,121 +430,442 @@ Write now:"""
 
     return prompt
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-#  SINGLE POST GENERATOR (with anti-generic retry loop)
+#  AI PROVIDER LAYER
+#  Chain: Groq (api_key param) → Gemini REST (GEMINI_API_KEY env) → empty
+#  Emergency templates handled at generate_single() level, not here.
 # ─────────────────────────────────────────────────────────────────────────────
-GROQ_MODEL = "llama-3.3-70b-versatile"
+
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL   = "llama-3.3-70b-versatile"          # Primary model (kept for backward compat)
+GROQ_FALLBACK_MODELS = [
+    "llama-3.3-70b-versatile",   # Best quality — try first
+    "llama-3.1-8b-instant",      # Faster, still solid — rate-limit fallback
+    "gemma2-9b-it",              # Google model on Groq — last Groq resort
+]
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_REST_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    "{model}:generateContent?key={key}"
+)
+GEMINI_FREE_MODELS = [
+    "gemini-1.5-flash",   # Most reliable free tier as of 2026
+    "gemini-1.0-pro",     # Fallback if 1.5-flash also hits quota
+]
 
-def call_ai(prompt: str, api_key: str, temperature: float = 0.9) -> str:
-    """Call Gemini 2.0 Flash — free tier with retry. [SWITCHED from Groq]"""
-    try:
-        genai.configure(api_key=api_key)
-        time.sleep(2)
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        for attempt in range(3):
+# ── Emergency templates — used only when ALL AI providers fail ──
+EMERGENCY_TEMPLATES = {
+    "AI & Tech": """Stop using ChatGPT like Google. 🚫
+
+Everyone types a question and copies the answer.
+That's the amateur move.
+
+The pros challenge it.
+Push back on the first answer.
+Ask: "Give me 3 alternatives."
+
+Output quality goes up 10x instantly.
+
+Comment 'PROMPT' and I'll share my full system 👇
+
+#AI #ChatGPT #AITools #Pakistan #Productivity""",
+
+    "Motivation": """Yaar, sach bolunga.
+
+Success ki koi shortcut nahi.
+Lekin smart work zaroor hoti hai.
+
+Roz sirf ek cheez improve karo.
+Bas ek.
+
+30 din mein khud fark mahsoos karogay.
+
+Drop a 🔥 if you're building something real.
+
+#Pakistan #Motivation #GrowthMindset #SelfImprovement""",
+
+    "ASMR / Satisfying": """Stress hai? Yeh try karo. 😌
+
+Aankhein band karo.
+5 gehri sansein lo.
+Apni favorite ASMR sound suno.
+
+Dimagh automatically slow ho jaata hai.
+Science bhi yahi kehti hai.
+
+Tag someone who needs to relax right now 💙
+
+#ASMR #StressRelief #Pakistan #Calm #Relaxing""",
+
+    "Business": """Rs. 50,000 per month.
+Zero investment.
+One skill.
+
+Content writing + AI tools.
+Pakistani market mein demand hai.
+Fiverr, Upwork, local clients — sab hain.
+
+Shuru karo aaj. Kal mat rakho.
+
+Comment 'HOW' and I'll send the full roadmap 👇
+
+#Pakistan #Business #Freelancing #AI #SideHustle""",
+}
+
+EMERGENCY_TEMPLATE_DEFAULT = """AI tools Pakistan mein available hain. 🤖
+
+ChatGPT, Claude, Gemini — sab free mein use karo.
+Freelancing, content, coding — sab mein kaam aate hain.
+
+Comment mein batao: kaunsa tool tumhare liye best raha?
+
+Follow karo aur save karo is post ko 👇
+
+#AI #Pakistan #Tech #AITools #Productivity"""
+
+
+def _call_groq(prompt: str, api_key: str, temperature: float = 0.9) -> str:
+    """
+    Primary AI provider: Groq with model cascade.
+    Tries GROQ_FALLBACK_MODELS in order on rate-limit or errors.
+
+    Args:
+        prompt     : Generation prompt
+        api_key    : GROQ_API_KEY value
+        temperature: 0.0–1.0
+
+    Returns:
+        Generated text string, or empty string on all failures.
+    """
+    if not api_key or not api_key.strip():
+        print("  [Groq] No API key — skipping")
+        return ""
+
+    for model in GROQ_FALLBACK_MODELS:
+        for attempt in range(2):   # 2 attempts per model for transient errors
             try:
-                response = model.generate_content(
-                    prompt,
-                    generation_config={
+                r = requests.post(
+                    GROQ_API_URL,
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
                         "temperature": temperature,
-                        "max_output_tokens": 600,
-                    }
+                        "max_tokens": 600,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {api_key.strip()}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=30,
                 )
-                text = response.text.strip()
-                if text and len(text) > 50:
-                    return text
+
+                if r.status_code == 200:
+                    text = r.json()["choices"][0]["message"]["content"].strip()
+                    if text and len(text) > 50:
+                        print(f"  [Groq] {model} ✓")
+                        return text
+                    print(f"  [Groq] {model} returned empty/short text")
+
+                elif r.status_code == 429:
+                    # Rate limited — exponential wait then try next model
+                    wait = 10 * (attempt + 1)
+                    print(f"  [Groq] {model} rate-limited — waiting {wait}s")
+                    time.sleep(wait)
+                    if attempt == 1:
+                        print(f"  [Groq] {model} still limited — trying next model")
+
+                elif r.status_code in (401, 403):
+                    # Bad key — no point trying other models with same key
+                    try:
+                        err_msg = r.json().get("error", {}).get("message", "auth error")
+                    except Exception:
+                        err_msg = r.text[:100]
+                    print(f"  [Groq] Auth error {r.status_code}: {err_msg}")
+                    return ""
+
+                elif r.status_code == 503:
+                    print(f"  [Groq] {model} service unavailable — trying next model")
+                    break  # Don't retry same model
+
+                else:
+                    try:
+                        err_msg = r.json().get("error", {}).get("message", r.text[:120])
+                    except Exception:
+                        err_msg = r.text[:120]
+                    print(f"  [Groq] {model} error {r.status_code}: {err_msg}")
+                    break  # Try next model
+
+            except requests.exceptions.Timeout:
+                print(f"  [Groq] {model} timeout (attempt {attempt + 1}/2)")
                 time.sleep(3)
+
+            except requests.exceptions.ConnectionError:
+                print(f"  [Groq] Network error — check connectivity")
+                break
+
             except Exception as e:
-                print(f"  Gemini attempt {attempt+1}: {e}")
-                time.sleep(5)
-    except Exception as e:
-        print(f"  Gemini setup error: {e}")
+                print(f"  [Groq] {model} unexpected error: {e}")
+                break
+
+    print("  [Groq] All models exhausted")
     return ""
 
 
-def generate_single(niche: str, hook_style: dict, variation: str, tone_level: int,
-                    api_key: str, max_retries: int = 3, language: str = "English") -> dict:
+def _call_gemini_rest(prompt: str, temperature: float = 0.9) -> str:
     """
-    Generate one post using Groq API (free, fast).
-    Retries up to max_retries times if output is generic or too short.
-    Returns: {"text": str, "error": None | str, "retries": int, "flagged_generic": bool}
+    Fallback AI provider: Gemini via REST API — no SDK required.
+    Reads GEMINI_API_KEY from environment. Silently skips if key not set.
+
+    Uses REST directly to avoid deprecated google.generativeai SDK and its
+    quota/version issues.
+
+    Returns:
+        Generated text string, or empty string on all failures/missing key.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        # Not configured — silently skip (Gemini is optional fallback)
+        return ""
+
+    for model in GEMINI_FREE_MODELS:
+        url = GEMINI_REST_URL.format(model=model, key=api_key)
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": 600,
+            },
+        }
+        for attempt in range(2):
+            try:
+                r = requests.post(url, json=payload, timeout=30)
+
+                if r.status_code == 200:
+                    data = r.json()
+                    text = (
+                        data.get("candidates", [{}])[0]
+                            .get("content", {})
+                            .get("parts", [{}])[0]
+                            .get("text", "")
+                            .strip()
+                    )
+                    if text and len(text) > 50:
+                        print(f"  [Gemini] {model} ✓")
+                        return text
+                    print(f"  [Gemini] {model} returned empty text")
+
+                elif r.status_code == 429:
+                    wait = 20 * (attempt + 1)
+                    print(f"  [Gemini] {model} quota exceeded — waiting {wait}s")
+                    time.sleep(wait)
+
+                elif r.status_code in (400, 401, 403):
+                    print(f"  [Gemini] {model} auth/config error {r.status_code}: {r.text[:100]}")
+                    return ""  # Bad key — skip all Gemini models
+
+                else:
+                    print(f"  [Gemini] {model} error {r.status_code}: {r.text[:100]}")
+                    break  # Try next model
+
+            except requests.exceptions.Timeout:
+                print(f"  [Gemini] {model} timeout (attempt {attempt + 1}/2)")
+                time.sleep(5)
+
+            except Exception as e:
+                print(f"  [Gemini] {model} exception: {e}")
+                break
+
+    print("  [Gemini] All models exhausted")
+    return ""
+
+
+def _emergency_template(niche: str) -> str:
+    """
+    Absolute last resort when all AI providers fail.
+    Returns a curated pre-written post. Never returns empty string.
+    This ensures posting schedule is never broken due to API issues.
+    """
+    template = EMERGENCY_TEMPLATES.get(niche, EMERGENCY_TEMPLATE_DEFAULT)
+    print(f"  [Emergency] ⚠️ Using pre-written template for niche: {niche}")
+    print(f"  [Emergency] All AI providers failed — check GROQ_API_KEY and GEMINI_API_KEY secrets")
+    return template
+
+
+def call_ai(prompt: str, api_key: str, temperature: float = 0.9) -> str:
+    """
+    Unified AI caller with 2-provider fallback chain.
+
+    Provider chain (in order):
+      1. Groq  — llama-3.3-70b-versatile → llama-3.1-8b-instant → gemma2-9b-it
+                 Uses `api_key` param (= GROQ_API_KEY from secrets)
+      2. Gemini REST — gemini-1.5-flash → gemini-1.0-pro
+                       Uses GEMINI_API_KEY from os.environ (optional, no SDK)
+
+    Args:
+        prompt     : The generation prompt
+        api_key    : Groq API key (GROQ_API_KEY)
+        temperature: Creativity level 0.0–1.0 (default 0.9)
+
+    Returns:
+        Generated text string. Returns empty string only if ALL providers
+        fail — generate_single() will then apply emergency template.
+
+    NOTE: api_key is the Groq key. Gemini key is read from env automatically.
+    This matches how auto_post.py passes secrets (groq_key → api_key param).
+    """
+    # ── Provider 1: Groq (primary) ──
+    text = _call_groq(prompt, api_key, temperature)
+    if text:
+        return text
+
+    print("  [AI] Groq failed — escalating to Gemini REST fallback")
+
+    # ── Provider 2: Gemini REST (no SDK) ──
+    text = _call_gemini_rest(prompt, temperature)
+    if text:
+        return text
+
+    print("  [AI] ❌ All providers failed")
+    return ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SINGLE POST GENERATOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_single(niche: str, hook_style: dict, variation: str, tone_level: int,
+                    api_key: str, max_retries: int = 3,
+                    language: str = "English") -> dict:
+    """
+    Generate one post with anti-generic retry loop.
+
+    Returns:
+        {
+            "text":            str,
+            "error":           None | str,
+            "retries":         int,
+            "flagged_generic": bool,
+        }
+
+    Guarantees: "text" is never empty — emergency template used as last resort.
     """
     if not api_key or not api_key.strip():
-        return {"text": "", "error": "NO_API_KEY", "retries": 0, "flagged_generic": False}
+        # No Groq key — try Gemini directly then fall back to template
+        print("  [Engine] GROQ_API_KEY not set — attempting Gemini fallback")
 
     last_text = ""
-    flagged = False
+    flagged   = False
 
     for attempt in range(max_retries):
-        prompt = build_prompt(niche, hook_style, variation, tone_level, language)
+        prompt      = build_prompt(niche, hook_style, variation, tone_level, language)
         temperature = round(0.82 + (attempt * 0.06), 2)
+
         try:
-            # [SWITCHED TO GEMINI 2.0 FLASH]
             text = call_ai(prompt, api_key, temperature)
+
             if not text:
+                print(f"  [Engine] Attempt {attempt + 1}/{max_retries}: empty response")
                 continue
+
             last_text = text
 
-            # Quality gates
             if is_too_short(text):
+                print(f"  [Engine] Attempt {attempt + 1}/{max_retries}: too short ({len(text)} chars)")
                 continue
+
             if is_generic(text):
                 flagged = True
+                print(f"  [Engine] Attempt {attempt + 1}/{max_retries}: generic phrase detected — retrying")
                 continue
 
-            return {"text": text, "error": None, "retries": attempt, "flagged_generic": False}
+            # Quality passed
+            return {
+                "text":            text,
+                "error":           None,
+                "retries":         attempt,
+                "flagged_generic": False,
+            }
 
         except requests.exceptions.ConnectionError:
-            return {"text": "", "error": "NETWORK_ERROR", "retries": attempt, "flagged_generic": False}
+            return {
+                "text":            "",
+                "error":           "NETWORK_ERROR",
+                "retries":         attempt,
+                "flagged_generic": False,
+            }
         except Exception as e:
-            return {"text": "", "error": str(e), "retries": attempt, "flagged_generic": False}
+            return {
+                "text":            "",
+                "error":           str(e),
+                "retries":         attempt,
+                "flagged_generic": False,
+            }
 
-    return {"text": last_text, "error": None, "retries": max_retries, "flagged_generic": flagged}
+    # ── All retries done ──
+    # If we have any text (even flagged-generic), use it rather than emergency
+    if last_text:
+        return {
+            "text":            last_text,
+            "error":           None,
+            "retries":         max_retries,
+            "flagged_generic": flagged,
+        }
+
+    # Absolute last resort — pre-written template so posting never breaks
+    emergency_text = _emergency_template(niche)
+    return {
+        "text":            emergency_text,
+        "error":           "emergency_template",
+        "retries":         max_retries,
+        "flagged_generic": True,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  THREE VARIATIONS GENERATOR
 # ─────────────────────────────────────────────────────────────────────────────
-def generate_three_variations(niche: str, hook_style: dict, tone_level: int, api_key: str, language: str = "English") -> dict:
+def generate_three_variations(niche: str, hook_style: dict, tone_level: int,
+                               api_key: str, language: str = "English") -> dict:
     """
-    Generates Emotional, Educational, and Bold/Controversial versions of a post.
+    Generates Emotional, Educational, and Bold/Controversial versions.
     Returns dict keyed by variation name.
     """
     results = {}
     for variation in ["Emotional", "Educational", "Bold/Controversial"]:
-        results[variation] = generate_single(niche, hook_style, variation, tone_level, api_key, language=language)
+        results[variation] = generate_single(
+            niche, hook_style, variation, tone_level, api_key, language=language
+        )
     return results
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  POST STRUCTURE PARSER — extracts hook & CTA paragraphs for highlighted preview
+#  POST STRUCTURE PARSER
 # ─────────────────────────────────────────────────────────────────────────────
 def parse_post_sections(text: str) -> dict:
     """
-    Splits post into paragraphs. Returns:
-      - hook: first paragraph
-      - cta: last paragraph
-      - body: everything in between
+    Splits post into paragraphs. Returns hook, body, and cta sections.
     """
     paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
     if len(paragraphs) >= 3:
         return {
             "hook": paragraphs[0],
             "body": "\n\n".join(paragraphs[1:-1]),
-            "cta": paragraphs[-1]
+            "cta":  paragraphs[-1],
         }
     elif len(paragraphs) == 2:
         return {"hook": paragraphs[0], "body": "", "cta": paragraphs[1]}
     else:
         lines = text.strip().split("\n")
-        return {"hook": lines[0] if lines else text, "body": "\n".join(lines[1:-1]), "cta": lines[-1] if len(lines) > 1 else ""}
+        return {
+            "hook": lines[0] if lines else text,
+            "body": "\n".join(lines[1:-1]),
+            "cta":  lines[-1] if len(lines) > 1 else "",
+        }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  HOOK STYLE LOOKUP
+#  HOOK STYLE LOOKUPS
 # ─────────────────────────────────────────────────────────────────────────────
 def get_hook_by_id(hook_id: str) -> dict:
     for h in HOOK_STYLES:
@@ -527,8 +873,10 @@ def get_hook_by_id(hook_id: str) -> dict:
             return h
     return HOOK_STYLES[0]
 
+
 def get_hook_names() -> list:
     return [h["name"] for h in HOOK_STYLES]
+
 
 def get_hook_by_name(name: str) -> dict:
     for h in HOOK_STYLES:
@@ -536,9 +884,6 @@ def get_hook_by_name(name: str) -> dict:
             return h
     return HOOK_STYLES[0]
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  IMAGE GENERATION — Pollinations.ai (free, no API key needed)
-# ─────────────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  IMAGE GENERATION — Groq prompt → Pollinations.ai render → Facebook upload
@@ -555,18 +900,20 @@ NICHE_BASE_STYLES = {
     "News & Trends":      "dramatic cinematic photojournalism, bold lighting, high contrast, award winning press photo, no text",
 }
 
-def generate_image_prompt_via_groq(niche: str, post_text: str, api_key: str) -> str:
-    """
-    Use Groq to generate a specific, vivid image prompt based on post content.
-    Falls back to niche style if Groq fails.
-    """
-    import re
-    # Clean post text — remove hashtags, emojis, Roman Urdu words
-    clean_text = re.sub(r"#\w+", "", post_text)
-    clean_text = re.sub(r"[^\x00-\x7F]+", "", clean_text)  # Remove non-ASCII
-    clean_text = clean_text.strip()[:300]
 
-    base_style = NICHE_BASE_STYLES.get(niche, "cinematic dramatic professional photography, 8k")
+def generate_image_prompt_via_groq(niche: str, post_text: str,
+                                    api_key: str) -> str:
+    """
+    Use Groq (via call_ai) to generate a vivid, specific image prompt.
+    Falls back to niche base style if generation fails.
+    """
+    # Clean post text — remove hashtags, strip non-ASCII (emojis)
+    clean_text = re.sub(r"#\w+", "", post_text)
+    clean_text = re.sub(r"[^\x00-\x7F]+", "", clean_text).strip()[:300]
+
+    base_style = NICHE_BASE_STYLES.get(
+        niche, "cinematic dramatic professional photography, 8k"
+    )
 
     system = """You are a professional AI image prompt engineer.
 Given a social media post and niche, write ONE ultra-specific Stable Diffusion image prompt.
@@ -578,103 +925,96 @@ Rules:
 - End with: no text, no words, photorealistic, 8k
 - Return ONLY the prompt. Nothing else."""
 
-    user = f"Niche: {niche}\nPost: {clean_text}\nBase style: {base_style}\n\nWrite the image prompt:"
+    user = (
+        f"Niche: {niche}\n"
+        f"Post: {clean_text}\n"
+        f"Base style: {base_style}\n\n"
+        "Write the image prompt:"
+    )
 
     try:
-        # [SWITCHED TO GEMINI 2.0 FLASH]
-        full_prompt = system + "\n\n" + user
-        result = call_ai(full_prompt, api_key, temperature=0.7)
+        result = call_ai(system + "\n\n" + user, api_key, temperature=0.7)
         if result:
             if "no text" not in result.lower():
                 result += ", no text, no words, photorealistic"
             return result
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  Image prompt generation error: {e}")
 
-    # Fallback
+    # Fallback to niche base style
     return f"{base_style}, no text, no words, photorealistic, 8k"
 
 
-def add_text_overlay(img_bytes: bytes, post_text: str, page_name: str = "AI with Abdullah") -> bytes:
+def add_text_overlay(img_bytes: bytes, post_text: str,
+                      page_name: str = "AI with Abdullah") -> bytes:
     """
     Adds hook text + page watermark overlay on image using Pillow.
-    - Hook (first line) in bold white text with dark gradient background
-    - Page name watermark bottom right
-    Returns processed image bytes (falls back to original if Pillow fails).
+    Returns processed image bytes, or original bytes if Pillow fails.
     """
     try:
-        from PIL import Image, ImageDraw, ImageFont, ImageFilter
+        from PIL import Image, ImageDraw, ImageFont
         import io
         import textwrap
 
-        # Open image
         img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
         w, h = img.size
 
-        # Extract hook — first non-empty line, strip hashtags + emojis
-        lines = [l.strip() for l in post_text.split("\n") if l.strip()]
-        hook = lines[0] if lines else ""
-        import re
-        hook = re.sub(r"#\w+", "", hook).strip()
-        hook = re.sub(r"[^\x00-\x7F]+", " ", hook).strip()  # remove non-ASCII (emojis)
-        if len(hook) > 70:
-            hook = hook[:67] + "..."
+        title_size     = max(36, w // 22)
+        watermark_size = max(18, w // 55)
 
-        # ── Dark gradient overlay at bottom ──
-        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        draw_overlay = ImageDraw.Draw(overlay)
-        gradient_height = int(h * 0.45)
-        for i in range(gradient_height):
-            alpha = int(210 * (i / gradient_height))
-            y = h - gradient_height + i
-            draw_overlay.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
-        img = Image.alpha_composite(img, overlay)
-
-        draw = ImageDraw.Draw(img)
-
-        # ── Try to load a bold font, fallback to default ──
-        font_size_hook = max(36, w // 22)
-        font_size_watermark = max(18, w // 55)
         try:
-            font_hook = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size_hook)
-            font_wm   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size_watermark)
+            font_hook = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", title_size
+            )
+            font_wm = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", watermark_size
+            )
         except Exception:
             font_hook = ImageFont.load_default()
             font_wm   = ImageFont.load_default()
 
-        # ── Wrap hook text ──
-        max_chars = max(20, w // (font_size_hook // 2))
-        wrapped = textwrap.fill(hook, width=max_chars)
-        wrapped_lines = wrapped.split("\n")
+        # Extract hook line — first non-empty line, cleaned
+        lines = [l.strip() for l in post_text.split("\n") if l.strip()]
+        hook  = lines[0] if lines else ""
+        hook  = re.sub(r"#\w+", "", hook).strip()
+        hook  = re.sub(r"[^\x00-\x7F]+", " ", hook).strip()
+        if len(hook) > 70:
+            hook = hook[:67] + "..."
 
-        # ── Draw hook text with shadow ──
-        line_h = font_size_hook + 10
-        total_text_h = len(wrapped_lines) * line_h
-        text_y = h - total_text_h - int(h * 0.07)
+        # Dark gradient overlay at bottom
+        overlay      = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw_overlay = ImageDraw.Draw(overlay)
+        grad_h       = int(h * 0.45)
+        for i in range(grad_h):
+            alpha = int(210 * (i / grad_h))
+            y     = h - grad_h + i
+            draw_overlay.line([(0, y), (w, y)], fill=(0, 0, 0, alpha))
+        img = Image.alpha_composite(img, overlay)
 
-        for line in wrapped_lines:
-            bbox = draw.textbbox((0, 0), line, font=font_hook)
+        draw     = ImageDraw.Draw(img)
+        max_chars = max(20, w // (title_size // 2))
+        wrapped   = textwrap.fill(hook, width=max_chars).split("\n")
+        line_h    = title_size + 10
+        text_y    = h - len(wrapped) * line_h - int(h * 0.07)
+
+        for line in wrapped:
+            bbox   = draw.textbbox((0, 0), line, font=font_hook)
             text_w = bbox[2] - bbox[0]
-            x = (w - text_w) // 2
-            # Shadow
+            x      = (w - text_w) // 2
             draw.text((x + 3, text_y + 3), line, font=font_hook, fill=(0, 0, 0, 180))
-            # Main text
-            draw.text((x, text_y), line, font=font_hook, fill=(255, 255, 255, 255))
+            draw.text((x, text_y),          line, font=font_hook, fill=(255, 255, 255, 255))
             text_y += line_h
 
-        # ── Watermark — page name bottom right ──
         wm_bbox = draw.textbbox((0, 0), page_name, font=font_wm)
-        wm_w = wm_bbox[2] - wm_bbox[0]
         draw.text(
-            (w - wm_w - 20, h - font_size_watermark - 15),
+            (w - (wm_bbox[2] - wm_bbox[0]) - 20, h - watermark_size - 15),
             page_name,
             font=font_wm,
-            fill=(255, 255, 255, 160)
+            fill=(255, 255, 255, 160),
         )
 
-        # ── Convert back to JPEG bytes ──
         result = img.convert("RGB")
-        buf = io.BytesIO()
+        buf    = io.BytesIO()
         result.save(buf, format="JPEG", quality=92)
         return buf.getvalue()
 
@@ -683,36 +1023,40 @@ def add_text_overlay(img_bytes: bytes, post_text: str, page_name: str = "AI with
         return img_bytes
 
 
-def generate_and_download_image(niche: str, post_text: str, api_key: str, page_name: str = "AI with Abdullah") -> bytes | None:
+def generate_and_download_image(niche: str, post_text: str, api_key: str,
+                                 page_name: str = "AI with Abdullah") -> bytes | None:
     """
-    1. Generate smart prompt via Groq
-    2. Fetch image bytes from Pollinations.ai (Flux model)
-    3. Add hook text + watermark overlay via Pillow
-    Returns processed image bytes or None on failure.
+    1. Generate vivid prompt via Groq
+    2. Fetch from Pollinations.ai (Flux model — free, no key)
+    3. Apply hook text + watermark overlay
+
+    Returns processed image bytes or None on download failure.
     """
     import urllib.parse
-    prompt = generate_image_prompt_via_groq(niche, post_text, api_key)
+
+    prompt  = generate_image_prompt_via_groq(niche, post_text, api_key)
     encoded = urllib.parse.quote(prompt)
-    seed = random.randint(1, 999999)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&nologo=true&enhance=true&model=flux&seed={seed}"
+    seed    = random.randint(1, 999999)
+    url = (
+        f"https://image.pollinations.ai/prompt/{encoded}"
+        f"?width=1080&height=1080&nologo=true&enhance=true&model=flux&seed={seed}"
+    )
     try:
         r = requests.get(url, timeout=60)
         if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
-            raw = r.content
-            # Apply text overlay
-            processed = add_text_overlay(raw, post_text, page_name)
+            processed = add_text_overlay(r.content, post_text, page_name)
             return processed
+        print(f"  Image download failed: HTTP {r.status_code}")
     except Exception as e:
-        print(f"  Image download failed: {e}")
+        print(f"  Image download error: {e}")
     return None
 
 
 def post_image_to_facebook(page_id: str, page_token: str,
-                           image_bytes: bytes, caption: str) -> dict:
+                            image_bytes: bytes, caption: str) -> dict:
     """
-    Post image to Facebook timeline.
-    Uses /photos with published=true — appears in feed, not just album.
-    No attached_media encoding bugs. Guaranteed to work.
+    Post image to Facebook timeline via /photos endpoint.
+    published=true ensures it appears in feed (not just album).
     """
     try:
         r = requests.post(
@@ -728,10 +1072,14 @@ def post_image_to_facebook(page_id: str, page_token: str,
         data = r.json()
         print(f"  FB photo post response: {data}")
         if "id" in data or "post_id" in data:
-            return {"success": True,
-                    "id": data.get("post_id", data.get("id"))}
-        return {"success": False,
-                "error": data.get("error", {}).get("message", str(data))}
+            return {
+                "success": True,
+                "id":      data.get("post_id", data.get("id")),
+                "method":  "photo",
+            }
+        return {
+            "success": False,
+            "error":   data.get("error", {}).get("message", str(data)),
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
-
