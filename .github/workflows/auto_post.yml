@@ -1,11 +1,11 @@
-name: Auto Post - AI with Abdullah
+name: Auto Post — AI with Abdullah
 
 on:
   schedule:
-    - cron: '0 4 * * *'
-    - cron: '0 6 * * *'
-    - cron: '0 9 * * *'
-    - cron: '0 16 * * *'
+    - cron: '0 4 * * *'   # 09:00 PKT  → morning slot
+    - cron: '0 6 * * *'   # 11:00 PKT  → trending slot
+    - cron: '0 9 * * *'   # 14:00 PKT  → afternoon slot
+    - cron: '0 16 * * *'  # 21:00 PKT  → evening slot
   workflow_dispatch:
     inputs:
       slot:
@@ -23,6 +23,7 @@ jobs:
   post:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -36,6 +37,48 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      # ── STEP: Validate critical secrets before doing anything ──
+      # Fails fast with a readable message instead of a cryptic Python traceback.
+      - name: Validate required secrets
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        run: |
+          echo "Validating required secrets..."
+          MISSING=0
+
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "❌ GROQ_API_KEY is not set in GitHub Secrets"
+            MISSING=1
+          else
+            echo "✓ GROQ_API_KEY present (${#GROQ_API_KEY} chars)"
+          fi
+
+          if [ -z "$FB_PAGE_TOKEN" ]; then
+            echo "❌ FB_PAGE_TOKEN is not set in GitHub Secrets"
+            MISSING=1
+          else
+            echo "✓ FB_PAGE_TOKEN present"
+          fi
+
+          if [ -z "$FB_PAGE_ID" ]; then
+            echo "❌ FB_PAGE_ID is not set in GitHub Secrets"
+            MISSING=1
+          else
+            echo "✓ FB_PAGE_ID present (${FB_PAGE_ID})"
+          fi
+
+          if [ "$MISSING" = "1" ]; then
+            echo ""
+            echo "Fix: Go to GitHub → Settings → Secrets and variables → Actions"
+            echo "Add the missing secrets listed above, then re-run this workflow."
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ All required secrets validated — proceeding to post"
 
       - name: Determine slot from cron time
         run: |
@@ -54,53 +97,37 @@ jobs:
             fi
           fi
 
-      - name: Run scheduler
-        run: python -c "import os, scheduler_runner; print(scheduler_runner.get_next_slot(os.environ['SLOT'])[0])"
-
       - name: Run auto post
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           GH_PAT: ${{ secrets.GH_PAT }}
           GITHUB_REPO: abdullahkevlog1-spec/viral-content-machine
         run: python auto_post.py --slot $SLOT
 
+      # ── Non-critical monitor steps: use || true so they never kill the run ──
       - name: Update actions status
-        if: always()
         run: python update_actions_status.py || true
 
       - name: Update FB analytics
-        if: always()
         env:
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         run: python update_fb_analytics.py || true
 
       - name: Update strategy state
-        if: always()
         env:
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         run: python update_strategy_state.py || true
 
-      - name: Run self-improvement snapshot
-        if: always()
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-          GH_PAT: ${{ secrets.GH_PAT }}
-          GITHUB_REPO: abdullahkevlog1-spec/viral-content-machine
-        run: python self_improve.py || true
-
       - name: Commit monitor updates
-        if: always()
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
-          git stash || true
+          git stash
           git pull --rebase origin main || true
           git stash pop || true
           git add -A
