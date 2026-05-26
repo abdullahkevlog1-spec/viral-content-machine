@@ -1,16 +1,16 @@
-# ═══════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════[...]
 #  engine.py — Viral Content Generation Engine
 #  NEW FILE — handles all AI logic, hooks, niche profiles, anti-generic filter
-# ═══════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════[...]
 
 import requests
 import time
 import google.generativeai as genai
 import random
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  HOOK STYLES LIBRARY  (12 psychology-backed hooks)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 HOOK_STYLES = [
     {
         "id": "curiosity",
@@ -134,9 +134,9 @@ HOOK_STYLES = [
     },
 ]
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  NICHE PROFILES — tone, audience, CTA library per niche
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 NICHE_PROFILES = {
     "AI & Tech": {
         "tone_descriptor": "futuristic, insightful, data-driven, slightly provocative",
@@ -228,9 +228,9 @@ NICHE_PROFILES = {
     }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  ANTI-GENERIC FILTER — rejects clichéd, low-engagement output
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 GENERIC_PHRASES = [
     # Original banned
     "stay motivated", "work hard every day", "never give up", "success is important",
@@ -285,9 +285,9 @@ def is_too_short(text: str) -> bool:
         return True
     return False
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  TONE LEVEL DESCRIPTIONS
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 def tone_descriptor(level: int) -> str:
     if level <= 3:
         return "safe and informative — share insights without controversy, warm and inviting"
@@ -296,9 +296,9 @@ def tone_descriptor(level: int) -> str:
     else:
         return "aggressive and provocative — bold claims, challenge common beliefs, create debate. Be fearless."
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  PROMPT BUILDER — constructs engineered prompt per variation
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 VARIATION_INSTRUCTIONS = {
     "Emotional": (
         "Focus on emotional storytelling and relatable human experience. "
@@ -405,9 +405,9 @@ Write now:"""
 
     return prompt
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  SINGLE POST GENERATOR (with anti-generic retry loop)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 GROQ_MODEL = "llama-3.3-70b-versatile"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -415,9 +415,13 @@ GEMINI_MODEL = "gemini-2.0-flash"
 
 def call_ai(prompt: str, api_key: str, temperature: float = 0.9) -> str:
     """Call Gemini 2.0 Flash — free tier with retry. [SWITCHED from Groq]"""
+    if not api_key or not api_key.strip():
+        print("  ERROR: API key is empty or None")
+        return ""
+    
     try:
-        genai.configure(api_key=api_key)
-        time.sleep(2)
+        genai.configure(api_key=api_key.strip())
+        time.sleep(1)
         model = genai.GenerativeModel(GEMINI_MODEL)
         for attempt in range(3):
             try:
@@ -431,19 +435,19 @@ def call_ai(prompt: str, api_key: str, temperature: float = 0.9) -> str:
                 text = response.text.strip()
                 if text and len(text) > 50:
                     return text
-                time.sleep(3)
+                time.sleep(2)
             except Exception as e:
-                print(f"  Gemini attempt {attempt+1}: {e}")
-                time.sleep(5)
+                print(f"  Gemini attempt {attempt+1}: {str(e)[:100]}")
+                time.sleep(3)
     except Exception as e:
-        print(f"  Gemini setup error: {e}")
+        print(f"  Gemini setup error: {str(e)[:150]}")
     return ""
 
 
 def generate_single(niche: str, hook_style: dict, variation: str, tone_level: int,
                     api_key: str, max_retries: int = 3, language: str = "English") -> dict:
     """
-    Generate one post using Groq API (free, fast).
+    Generate one post using Gemini API.
     Retries up to max_retries times if output is generic or too short.
     Returns: {"text": str, "error": None | str, "retries": int, "flagged_generic": bool}
     """
@@ -457,7 +461,7 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
         prompt = build_prompt(niche, hook_style, variation, tone_level, language)
         temperature = round(0.82 + (attempt * 0.06), 2)
         try:
-            # [SWITCHED TO GEMINI 2.0 FLASH]
+            # [USING GEMINI 2.0 FLASH]
             text = call_ai(prompt, api_key, temperature)
             if not text:
                 continue
@@ -480,9 +484,9 @@ def generate_single(niche: str, hook_style: dict, variation: str, tone_level: in
     return {"text": last_text, "error": None, "retries": max_retries, "flagged_generic": flagged}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  THREE VARIATIONS GENERATOR
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 def generate_three_variations(niche: str, hook_style: dict, tone_level: int, api_key: str, language: str = "English") -> dict:
     """
     Generates Emotional, Educational, and Bold/Controversial versions of a post.
@@ -494,9 +498,9 @@ def generate_three_variations(niche: str, hook_style: dict, tone_level: int, api
     return results
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  POST STRUCTURE PARSER — extracts hook & CTA paragraphs for highlighted preview
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 def parse_post_sections(text: str) -> dict:
     """
     Splits post into paragraphs. Returns:
@@ -518,9 +522,9 @@ def parse_post_sections(text: str) -> dict:
         return {"hook": lines[0] if lines else text, "body": "\n".join(lines[1:-1]), "cta": lines[-1] if len(lines) > 1 else ""}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  HOOK STYLE LOOKUP
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 def get_hook_by_id(hook_id: str) -> dict:
     for h in HOOK_STYLES:
         if h["id"] == hook_id:
@@ -536,13 +540,13 @@ def get_hook_by_name(name: str) -> dict:
             return h
     return HOOK_STYLES[0]
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  IMAGE GENERATION — Pollinations.ai (free, no API key needed)
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 #  IMAGE GENERATION — Groq prompt → Pollinations.ai render → Facebook upload
-# ─────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────══[...]
 
 NICHE_BASE_STYLES = {
     "AI & Tech":          "cinematic close-up glowing holographic AI brain, deep space neon blue purple light rays, ultra detailed 8k, dramatic shadows, no text",
@@ -557,8 +561,8 @@ NICHE_BASE_STYLES = {
 
 def generate_image_prompt_via_groq(niche: str, post_text: str, api_key: str) -> str:
     """
-    Use Groq to generate a specific, vivid image prompt based on post content.
-    Falls back to niche style if Groq fails.
+    Use Gemini to generate a specific, vivid image prompt based on post content.
+    Falls back to niche style if Gemini fails.
     """
     import re
     # Clean post text — remove hashtags, emojis, Roman Urdu words
@@ -581,7 +585,7 @@ Rules:
     user = f"Niche: {niche}\nPost: {clean_text}\nBase style: {base_style}\n\nWrite the image prompt:"
 
     try:
-        # [SWITCHED TO GEMINI 2.0 FLASH]
+        # [USING GEMINI 2.0 FLASH]
         full_prompt = system + "\n\n" + user
         result = call_ai(full_prompt, api_key, temperature=0.7)
         if result:
@@ -685,7 +689,7 @@ def add_text_overlay(img_bytes: bytes, post_text: str, page_name: str = "AI with
 
 def generate_and_download_image(niche: str, post_text: str, api_key: str, page_name: str = "AI with Abdullah") -> bytes | None:
     """
-    1. Generate smart prompt via Groq
+    1. Generate smart prompt via Gemini
     2. Fetch image bytes from Pollinations.ai (Flux model)
     3. Add hook text + watermark overlay via Pillow
     Returns processed image bytes or None on failure.
@@ -734,4 +738,3 @@ def post_image_to_facebook(page_id: str, page_token: str,
                 "error": data.get("error", {}).get("message", str(data))}
     except Exception as e:
         return {"success": False, "error": str(e)}
-
