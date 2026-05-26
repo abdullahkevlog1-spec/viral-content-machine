@@ -387,7 +387,7 @@ def run_trending_post(groq_key: str, fb_token: str, fb_page: str):
     print(f"POSTED SUCCESSFULLY: {result['id']}")
 
 
-def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str):
+def run_regular_post(slot_name: str, gemini_key: str, fb_token: str, fb_page: str):
     base_slot = SLOTS[slot_name]
 
     # ── Step 1: Agent se adapted strategy lo ──
@@ -403,7 +403,7 @@ def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str)
     print("==================================================")
 
     # ── Step 2: First draft generate karo ──
-    text = generate_post(slot, groq_key)
+    text = generate_post(slot, gemini_key)
     if not text:
         print("Failed to generate post")
         sys.exit(1)
@@ -419,7 +419,7 @@ def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str)
 
             elif verdict["action"] == "regenerate":
                 print(f"  Regenerating (attempt {attempt + 1}/2)...")
-                new_text = generate_post(slot, groq_key)
+                new_text = generate_post(slot, gemini_key)
                 if new_text:
                     text = new_text
                 else:
@@ -443,7 +443,7 @@ def run_regular_post(slot_name: str, groq_key: str, fb_token: str, fb_page: str)
         result = post_carousel_to_facebook(fb_page, fb_token, slides, text)
 
     if not result.get("success"):
-        img_bytes = generate_and_download_image(slot["niche"], text, groq_key)
+        img_bytes = generate_and_download_image(slot["niche"], text, gemini_key)
         if img_bytes:
             result = engine_post_image_to_facebook(fb_page, fb_token, img_bytes, text)
 
@@ -490,11 +490,19 @@ def main():
     )
     args = parser.parse_args()
 
+    # Use GEMINI_API_KEY for regular posts (engine.py uses Gemini)
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    # Use GROQ_API_KEY for trending posts
     groq_key = os.environ.get("GROQ_API_KEY", "")
     fb_token = os.environ.get("FB_PAGE_TOKEN", "")
     fb_page = os.environ.get("FB_PAGE_ID", "")
 
-    if not groq_key:
+    # GEMINI required for regular posts and image generation
+    if args.slot != "trending" and not gemini_key:
+        print("GEMINI_API_KEY not set in GitHub Secrets")
+        sys.exit(1)
+    # GROQ required only for trending posts
+    if args.slot == "trending" and not groq_key:
         print("GROQ_API_KEY not set in GitHub Secrets")
         sys.exit(1)
     if not fb_token or not fb_page:
@@ -504,7 +512,7 @@ def main():
     if args.slot == "trending":
         run_trending_post(groq_key, fb_token, fb_page)
     else:
-        run_regular_post(args.slot, groq_key, fb_token, fb_page)
+        run_regular_post(args.slot, gemini_key, fb_token, fb_page)
 
 
 if __name__ == "__main__":
