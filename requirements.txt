@@ -1,7 +1,9 @@
+google-generativeai
+edge-tts
+moviepy
+playwright
 streamlit
 requests
-APScheduler
 pytz
 Pillow
-pytrends
-google-generativeai
+APScheduler

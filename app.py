@@ -130,22 +130,8 @@ def _log_schedule(label: str, status: str, text: str = ""):
         json.dump(logs, f)
 
 def start_scheduler():
-    """Start background scheduler once per app session."""
-    if "scheduler_started" not in st.session_state:
-        scheduler = BackgroundScheduler(timezone=PKT)
-        for slot in SCHEDULE_SLOTS:
-            scheduler.add_job(
-                scheduled_post_job,
-                trigger="cron",
-                hour=slot["hour"],
-                minute=slot["minute"],
-                args=[slot],
-                id=f"slot_{slot['hour']}_{slot['minute']}",
-                replace_existing=True,
-            )
-        scheduler.start()
-        st.session_state["scheduler_started"] = True
-        st.session_state["scheduler"] = scheduler
+    """Scheduler disabled in favor of GitHub Actions to prevent double-posting."""
+    pass
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  PAGE CONFIG  [MODIFIED — layout changed to wide for new sidebar]
