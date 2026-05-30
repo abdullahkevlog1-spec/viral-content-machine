@@ -35,8 +35,18 @@ def run_post(slot_key: str):
     page_id = os.environ.get("FB_PAGE_ID")
     page_token = os.environ.get("FB_PAGE_TOKEN")
     
-    if not all([api_key, page_id, page_token]):
-        print("Missing Credentials")
+    missing = []
+    if not api_key:
+        missing.append("GEMINI_API_KEY")
+    if not page_id:
+        missing.append("FB_PAGE_ID")
+    if not page_token:
+        missing.append("FB_PAGE_TOKEN")
+    
+    if missing:
+        print(f"Error: Missing required secrets: {', '.join(missing)}")
+        print("Please configure these secrets in GitHub repository settings:")
+        print("  Settings → Secrets and variables → Actions")
         sys.exit(1)
         
     slot = SLOTS.get(slot_key, SLOTS["morning"])
